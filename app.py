@@ -1,39 +1,44 @@
 """Shelf Scanner proof of concept: a small web app that takes shelf photos and returns the books worth pulling.
 
+A capture is the photos and settings as uploaded; each run is one pass of the pipeline over a capture, recording the code
+version (baseline) it ran on, so an old capture can be run again after the rules change (see DESIGN.md).
+
 Settings (environment variables):
   ANTHROPIC_API_KEY      required
   ANTHROPIC_ADMIN_KEY    optional; an Admin API key, read-only use: the account's spending, for the "credit left" figure
   SHELFSCAN_PASSCODE     required; the one passcode that signs people in
   SHELFSCAN_SECRET       signs the session cookie; set it so sign-ins survive restarts
-  SHELFSCAN_HOME         where jobs and saved responses live (default ./var; /home/shelfscan on Azure)
-  SHELFSCAN_JOB_CAP      Claude spending cap per scan in $ (default 2.00)
+  SHELFSCAN_HOME         the app's own disk: saved responses, the spend ledger, the credit balance, working folders and any
+                         old jobs to migrate (default ./var; /home/shelfscan on Azure)
+  AZURE_STORAGE_CONNECTION_STRING, SHELFSCAN_CONTAINER   where captures, runs and marks are kept (else ./var/store)
+  SHELFSCAN_JOB_CAP      Claude spending cap per run in $ (default 2.00)
   SHELFSCAN_DAILY_CAP    Claude spending cap per UTC day in $ (default 10.00)
   SHELFSCAN_PRICE_FILES  comma-separated price files, if not the ones in data/"""
-import datetime, hmac, json, os, queue, secrets, shutil, threading, time, uuid
-from flask import Flask, abort, redirect, render_template, request, send_from_directory, session, url_for
+import datetime, hmac, mimetypes, os, queue, secrets, shutil, threading, time
+from flask import Flask, Response, abort, redirect, render_template, request, session, url_for
 from werkzeug.utils import secure_filename
-from shelfscan import credit, pipeline
+from shelfscan import credit, marks, marks_web, pipeline, repo, version
+from shelfscan import index as capture_index
 from shelfscan.claude import Claude
 from shelfscan.rules import CATEGORIES
+from shelfscan.store import NotFound, open_store
 
 HOME = os.environ.get('SHELFSCAN_HOME') or os.path.join(os.path.dirname(os.path.abspath(__file__)), 'var')
-JOBS, CACHE = os.path.join(HOME, 'jobs'), os.path.join(HOME, 'cache')
+JOBS, CACHE, WORK = os.path.join(HOME, 'jobs'), os.path.join(HOME, 'cache'), os.path.join(HOME, 'work')
 JOB_CAP = float(os.environ.get('SHELFSCAN_JOB_CAP', '2.00'))
 DAILY_CAP = float(os.environ.get('SHELFSCAN_DAILY_CAP', '10.00'))
 ADMIN_KEY = os.environ.get('ANTHROPIC_ADMIN_KEY', '').strip()
-KEEP_DAYS = 30
 DESCRIPTIONS = {'thrift': 'under $10 a book', 'cheap': '$10–$30 a book', 'rare': '$30–$100 a book', 'extreme': '$100 and up', 'signed': 'signed copies'}
-os.makedirs(JOBS, exist_ok=True)
+os.makedirs(HOME, exist_ok=True)
+store = open_store(os.path.join(HOME, 'store'))
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('SHELFSCAN_SECRET') or secrets.token_hex(32)
 app.config.update(MAX_CONTENT_LENGTH=150 * 1024 * 1024, SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE='Lax',
                   SESSION_COOKIE_SECURE=os.environ.get('SHELFSCAN_INSECURE_COOKIE') != '1', PERMANENT_SESSION_LIFETIME=datetime.timedelta(days=30))
 
-work = queue.Queue()
+work = queue.Queue()                    # (capture id, run id)
 failures, failures_lock = {}, threading.Lock()
-feedback_lock = threading.Lock()
-VERDICTS = ('worth', 'not', 'should')        # worth pulling, not worth pulling, should have been pulled
 
 
 def ordinal(n):
@@ -44,56 +49,67 @@ def ordinal(n):
 app.jinja_env.globals.update(ordinal=ordinal, categories=CATEGORIES)
 
 
-def job_dir(job_id):
-    if not job_id.isalnum(): abort(404)
-    d = os.path.join(JOBS, job_id)
-    if not os.path.isdir(d): abort(404)
-    return d
+def queue_run(cid):
+    """Starts a run of the capture on the current baseline; returns its id."""
+    run = repo.start_run(store, cid, JOB_CAP)
+    work.put((cid, run['id']))
+    return run['id']
 
 
-def load_feedback(d):
-    try: return json.load(open(os.path.join(d, 'feedback.json')))
-    except (OSError, ValueError): return {}
+app.config['START_RUN'] = queue_run
+app.config['STORE'] = store
+app.register_blueprint(marks_web.bp)
 
 
-def all_jobs():
-    out = []
-    for name in os.listdir(JOBS):
-        try:
-            j = pipeline.load_job(os.path.join(JOBS, name))
-            j['marked'] = len(load_feedback(os.path.join(JOBS, name)))
-            out.append(j)
-        except (OSError, ValueError): pass
-    return sorted(out, key=lambda j: j['created'], reverse=True)
+def recent_captures(n=25):
+    """The newest captures' summaries, from the index; straight from the store while the index is empty."""
+    entries = capture_index.read(store).get('captures') or []
+    if not entries:
+        for cid in repo.capture_ids(store):
+            try: entries.append(repo.summary(store, cid))
+            except NotFound: pass
+        entries.sort(key=lambda e: e['created'], reverse=True)
+    return entries[:n]
 
 
 def spent_today():
-    today = datetime.datetime.now(datetime.timezone.utc).date().isoformat()
-    return sum((j.get('cost') or {}).get('spent', 0) for j in all_jobs() if (j.get('started') or j['created'])[:10] == today)
+    midnight = datetime.datetime.now(datetime.timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+    return credit.ledger_spent(HOME, midnight)
 
 
 def worker():
     claude = Claude(CACHE, ledger=os.path.join(HOME, 'spend.jsonl'))
     while True:
-        job_id = work.get()
-        try:
-            d = os.path.join(JOBS, job_id)
-            job, results = pipeline.run(d, claude)
-            job['pulls'] = sum(len(p['pulls']) for p in results['photos'])
-            job['leads'] = sum(len(p.get('leads', [])) for p in results['photos'])
-            pipeline.save_job(d, job)
-        except Exception as e:                 # keep the worker alive whatever happens to one job
-            print('job', job_id, 'failed:', e, flush=True)
+        cid, rid = work.get()
+        try: pipeline.run_stored(store, cid, rid, claude, WORK)
+        except Exception as e:                 # keep the worker alive whatever happens to one run
+            print('run', cid, rid, 'failed:', e, flush=True)
 
 
 def start():
-    cutoff = time.time() - KEEP_DAYS * 86400
-    for name in os.listdir(JOBS):
-        d = os.path.join(JOBS, name)
-        if os.path.getmtime(d) < cutoff: shutil.rmtree(d, ignore_errors=True)
-    for j in sorted(all_jobs(), key=lambda j: j['created']):          # resume work interrupted by a restart; saved responses aren't paid twice
-        if j['status'] in ('queued', 'running'): work.put(j['id'])
+    shutil.rmtree(WORK, ignore_errors=True)            # working folders left by a restart; their runs start again below
+    if os.path.isdir(JOBS):
+        try:
+            from tools import migrate_jobs
+            migrate_jobs.migrate(JOBS, store)
+        except (ImportError, NotImplementedError) as e: print('old jobs not migrated:', e, flush=True)
+    pending = []                                       # resume work interrupted by a restart; saved responses aren't paid twice
+    for cid in repo.capture_ids(store):
+        for run in repo.list_runs(store, cid):
+            if run['status'] in ('queued', 'running'): pending.append((run['created'], cid, run['id']))
+    for _, cid, rid in sorted(pending): work.put((cid, rid))
     threading.Thread(target=worker, daemon=True).start()
+
+
+def capture_or_404(cid):
+    if not repo.valid_id(cid): abort(404)
+    try: return repo.load_capture(store, cid)
+    except NotFound: abort(404)
+
+
+def stream(data, name, max_age=86400):
+    return Response(data, mimetype=mimetypes.guess_type(name)[0] or 'application/octet-stream',
+                    headers={'Cache-Control': f'private, max-age={max_age}'})
 
 
 @app.before_request
@@ -127,9 +143,10 @@ def health():
 
 
 @app.route('/')
-def index(credit_error=None):
-    return render_template('index.html', jobs=all_jobs()[:25], descriptions=DESCRIPTIONS, job_cap=JOB_CAP, daily_cap=DAILY_CAP, spent_today=spent_today(),
-                           credit=credit.remaining(HOME, ADMIN_KEY), credit_error=credit_error)
+def index(credit_error=None, error=None):
+    return render_template('index.html', captures=recent_captures(), descriptions=DESCRIPTIONS, job_cap=JOB_CAP, daily_cap=DAILY_CAP,
+                           spent_today=spent_today(), credit=credit.remaining(HOME, ADMIN_KEY), credit_error=credit_error, error=error)
+
 
 
 @app.route('/credit', methods=['POST'])
@@ -145,93 +162,74 @@ def set_credit():
     return redirect(url_for('index'))
 
 
-@app.route('/jobs', methods=['POST'])
-def create_job():
-    if spent_today() >= DAILY_CAP:
-        return render_template('job.html', job={'created': datetime.datetime.now(datetime.timezone.utc).isoformat(), 'status': 'refused',
-                               'error': f'Today\'s ${DAILY_CAP:.2f} limit is used up.'}, results=None, can_rerun=False), 429
-    files = [f for f in request.files.getlist('photos') if f and f.filename]
+@app.route('/captures', methods=['POST'])
+def create_capture():
+    if spent_today() >= DAILY_CAP: return index(error=f"Today's ${DAILY_CAP:.2f} limit is used up."), 429
+    files = [f for f in request.files.getlist('photos') if f and f.filename][:10]
     if not files: return redirect(url_for('index'))
     category = request.form.get('category', 'cheap')
     if category not in CATEGORIES: abort(400)
     try: minimum = max(1.0, float(request.form['minimum'])) if request.form.get('minimum') else None
     except ValueError: minimum = None
-    overrides = {str(k): v for k, v in pipeline.parse_overrides(request.form.get('overrides')).items()}
-    job_id = uuid.uuid4().hex[:12]
-    d = os.path.join(JOBS, job_id)
-    os.makedirs(d)
-    photos = []
-    for i, f in enumerate(files[:10], 1):
-        ext = os.path.splitext(secure_filename(f.filename))[1].lower() or '.jpg'
-        name = f'upload{i}{ext}'
-        f.save(os.path.join(d, name))
-        photos.append(dict(file=name, name=secure_filename(f.filename) or name, category=category, overrides=overrides,
-                           minimum=minimum, note=request.form.get('note', '')[:300], second_read=request.form.get('second_read') == '1'))
-    job = dict(id=job_id, created=datetime.datetime.now(datetime.timezone.utc).isoformat(timespec='seconds'), status='queued',
-               cap=JOB_CAP, photos=photos, progress='waiting to start')
-    pipeline.save_job(d, job)
-    work.put(job_id)
-    return redirect(url_for('job_page', job_id=job_id))
+    settings = dict(category=category, overrides={str(k): v for k, v in pipeline.parse_overrides(request.form.get('overrides')).items()},
+                    minimum=minimum, note=request.form.get('note', '')[:300], second_read=request.form.get('second_read') == '1')
+    capture = repo.create_capture(store, [(secure_filename(f.filename), f.read()) for f in files], settings)
+    queue_run(capture['id'])
+    return redirect(url_for('capture_page', cid=capture['id']))
 
 
-@app.route('/jobs/<job_id>')
-def job_page(job_id):
-    d = job_dir(job_id)
-    job = pipeline.load_job(d)
-    rp = os.path.join(d, 'results.json')
-    results = None
-    if os.path.exists(rp) and job['status'] not in ('queued', 'running'):
-        try: results = json.load(open(rp))
-        except ValueError: job['error'] = job.get('error') or 'The results file is damaged; run the scan again (saved responses make it free).'
-    return render_template('job.html', job=job, results=results, can_rerun=job['status'] not in ('queued', 'running'),
-                           rerun_url=url_for('rerun', job_id=job_id), file_url=lambda n: url_for('job_file', job_id=job_id, name=n),
-                           feedback=load_feedback(d), feedback_url=url_for('feedback', job_id=job_id), credit=credit.remaining(HOME, ADMIN_KEY),
-                           results_url=url_for('job_file', job_id=job_id, name='results.json'))
+@app.route('/captures/<cid>')
+def capture_page(cid):
+    capture = capture_or_404(cid)
+    runs = repo.list_runs(store, cid)
+    rid = request.args.get('run')
+    run = next((r for r in runs if r['id'] == rid), None) if rid else (runs[0] if runs else None)
+    if rid and not run: abort(404)
+    results = repo.load_results(store, cid, run['id']) if run and run['status'] not in ('queued', 'running') else None
+    busy = any(r['status'] in ('queued', 'running') for r in runs)
+    return render_template('capture.html', capture=capture, runs=runs, run=run, results=results, busy=busy,
+                           baseline=version.baseline(), new_run_url=url_for('new_run', cid=cid),
+                           file_url=lambda n: url_for('run_file', cid=cid, rid=run['id'], name=n),
+                           results_url=run and url_for('run_results', cid=cid, rid=run['id']),
+                           marks=marks.for_run(store, cid, results) if results else {}, marks_url=f'/captures/{cid}/marks',
+                           credit=credit.remaining(HOME, ADMIN_KEY))
 
 
-@app.route('/jobs/<job_id>/feedback', methods=['POST'])
-def feedback(job_id):
-    """Records one verdict on a book: worth pulling, not worth it, or should have been pulled. An empty verdict clears it."""
-    d = job_dir(job_id)
-    data = request.get_json(silent=True) or {}
-    key, verdict = str(data.get('key', ''))[:80], data.get('verdict') or ''
-    if not key or (verdict and verdict not in VERDICTS): abort(400)
-    with feedback_lock:
-        fb = load_feedback(d)
-        if verdict:
-            fb[key] = {'verdict': verdict, 'label': str(data.get('label', ''))[:200], 'category': str(data.get('category', ''))[:20],
-                       'value': data.get('value') or None, 'at': datetime.datetime.now(datetime.timezone.utc).isoformat(timespec='seconds')}
-        else:
-            fb.pop(key, None)
-        tmp = os.path.join(d, f'feedback.json.{threading.get_ident()}.tmp')
-        json.dump(fb, open(tmp, 'w'), indent=1); os.replace(tmp, os.path.join(d, 'feedback.json'))
-    return {'ok': True, 'marked': len(fb)}
+@app.route('/captures/<cid>/runs', methods=['POST'])
+def new_run(cid):
+    capture_or_404(cid)
+    if spent_today() >= DAILY_CAP: abort(429)
+    return redirect(url_for('capture_page', cid=cid, run=queue_run(cid)))
 
 
-@app.route('/feedback.json')
-def all_feedback():
-    """Every verdict across all scans, for tuning the rules."""
-    out = []
-    for j in all_jobs():
-        for key, v in load_feedback(os.path.join(JOBS, j['id'])).items():
-            out.append(dict(job=j['id'], created=j['created'], key=key, **v))
-    return {'feedback': out}
+@app.route('/captures/<cid>/runs/<rid>/files/<name>')
+def run_file(cid, rid, name):
+    if not (repo.valid_id(cid) and repo.valid_id(rid)): abort(404)
+    name = secure_filename(name)
+    try: return stream(repo.get_run_file(store, cid, rid, name), name)
+    except NotFound: abort(404)
 
 
-@app.route('/jobs/<job_id>/rerun', methods=['POST'])
-def rerun(job_id):
-    d = job_dir(job_id)
-    job = pipeline.load_job(d)
-    if job['status'] not in ('queued', 'running'):
-        job.update(status='queued', progress='waiting to start', error=None)
-        pipeline.save_job(d, job)
-        work.put(job_id)
-    return redirect(url_for('job_page', job_id=job_id))
+@app.route('/captures/<cid>/runs/<rid>/results.json')
+def run_results(cid, rid):
+    if not (repo.valid_id(cid) and repo.valid_id(rid)): abort(404)
+    try: return stream(store.get_bytes(repo.results_key(cid, rid)), 'results.json', max_age=0)
+    except NotFound: abort(404)
 
 
-@app.route('/jobs/<job_id>/files/<name>')
-def job_file(job_id, name):
-    return send_from_directory(job_dir(job_id), secure_filename(name), max_age=86400)
+@app.route('/captures/<cid>/photos/<name>')
+def capture_photo(cid, name):
+    if not repo.valid_id(cid): abort(404)
+    name = secure_filename(name)
+    try: return stream(repo.get_photo(store, cid, name), name)
+    except NotFound: abort(404)
+
+
+@app.route('/jobs/<cid>')
+@app.route('/jobs/<cid>/<path:rest>')
+def old_job(cid, rest=None):
+    """Links from before captures: a job became a capture with the same id."""
+    return redirect(url_for('capture_page', cid=cid), 301)
 
 
 start()

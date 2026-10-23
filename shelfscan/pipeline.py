@@ -1,8 +1,9 @@
 """Runs one job: every photo through shelf finding, reading, the rules and the result images.
 
-A job is a folder holding job.json (the request and its status), the uploaded photos, and after a run results.json plus images."""
-import concurrent.futures as cf, datetime, json, os, re, threading, time, traceback
-from . import images, notes, reader, rules
+A job is a folder holding job.json (the request and its status), the uploaded photos, and after a run results.json plus images.
+run_stored() runs a stored capture this way in a temporary folder and saves the run's results and images to the store."""
+import concurrent.futures as cf, datetime, json, os, re, shutil, tempfile, threading, time, traceback
+from . import images, notes, reader, repo, rules
 from .claude import Budget, CapReached, Claude
 from .refdata import Reference
 
@@ -35,10 +36,15 @@ def parse_overrides(text):
     return out
 
 
-def run(job_dir, claude, now=time.time):
+def run(job_dir, claude, now=time.time, on_progress=None):
+    """on_progress(job): called after each change of status or progress, as job.json is saved."""
+    def save(job):
+        save_job(job_dir, job)
+        if on_progress: on_progress(job)
+
     job = load_job(job_dir)
     job.update(status='running', started=datetime.datetime.now(datetime.timezone.utc).isoformat(timespec='seconds'), error=None)
-    save_job(job_dir, job)
+    save(job)
     t0 = now()
     budget = Budget(job.get('cap', 2.0))
     ref = reference()
@@ -52,7 +58,7 @@ def run(job_dir, claude, now=time.time):
             n = len(job['photos'])
             job['progress'] = '; '.join((f'photo {i}: ' if n > 1 else '') + status[i] for i in sorted(status))
             job['cost'] = budget.summary()
-            save_job(job_dir, job)
+            save(job)
 
     def one_photo(k, p):
         progress(k, 'finding shelves')
@@ -118,5 +124,41 @@ def run(job_dir, claude, now=time.time):
     job['status'], job['error'] = final, error
     job['cost'], job['progress'] = budget.summary(), ''
     job['finished'] = datetime.datetime.now(datetime.timezone.utc).isoformat(timespec='seconds')
-    save_job(job_dir, job)
+    save(job)
     return job, results
+
+
+def run_stored(store, cid, rid, claude, work_root):
+    """Runs a stored capture: copies its photos into a temporary folder under work_root, runs the pipeline there, mirrors
+    progress into run.json (at most every 2 seconds), then saves results.json and every image to the run's keys."""
+    capture, run_ = repo.load_capture(store, cid), repo.load_run(store, cid, rid)
+    os.makedirs(work_root, exist_ok=True)
+    d = tempfile.mkdtemp(prefix=f'{cid}-', dir=work_root)
+    last = [0.0]
+
+    def mirror(job):        # progress only: the final status is saved once the results and images are in the store
+        if job['status'] != 'running' or time.time() - last[0] < 2: return
+        last[0] = time.time()
+        changed = run_['status'] != job['status']
+        run_.update({k: job.get(k) for k in ('status', 'started', 'progress', 'cost', 'error')})
+        repo.save_run(store, run_, update_index=changed)
+
+    try:
+        for p in capture['photos']:
+            with open(os.path.join(d, p['file']), 'wb') as f: f.write(repo.get_photo(store, cid, p['file']))
+        save_job(d, dict(id=cid, created=capture['created'], status='queued', cap=run_.get('cap') or 2.0, photos=capture['photos']))
+        job, results = run(d, claude, on_progress=mirror)
+        uploads = {p['file'] for p in capture['photos']} | {'job.json', 'results.json'}
+        for name in sorted(os.listdir(d)):
+            if name not in uploads and not name.endswith('.tmp'):
+                with open(os.path.join(d, name), 'rb') as f: repo.put_run_file(store, cid, rid, name, f.read())
+        store.put_json(repo.results_key(cid, rid), results)        # after the images, so a run with results has its images
+        run_.update(status=job['status'], error=job.get('error'), progress='', cost=job.get('cost'), finished=job.get('finished'),
+                    **repo.run_counts(results))
+    except Exception as e:
+        run_.update(status='failed', error=f'{type(e).__name__}: {e}', progress='', finished=repo.now_iso())
+        traceback.print_exception(e)
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+    repo.save_run(store, run_, update_index=True)
+    return run_

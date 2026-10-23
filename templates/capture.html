@@ -1,7 +1,9 @@
 {% extends 'base.html' %}
-{% block title %}Scan {{ job.created[:16].replace('T', ' ') }} · Shelf Scanner{% endblock %}
-{% block head %}{% if job.status in ('queued', 'running') %}<meta http-equiv="refresh" content="4">{% endif %}{% endblock %}
+{% from '_marks.html' import mark_buttons, marks_script %}
+{% block title %}Capture {{ capture.created[:16].replace('T', ' ') }} · Shelf Scanner{% endblock %}
+{% block head %}{% if busy %}<meta http-equiv="refresh" content="4">{% endif %}{% endblock %}
 {% block body %}
+{% macro baseline_text(b) %}{% if b and b.sha %}<code>{{ b.sha[:7] }}</code> <span class="muted small">{{ (b.committed_at or '')[:16].replace('T', ' ') }}{% if b.dirty %}, with uncommitted changes{% endif %}</span>{% else %}<span class="muted">before git</span>{% endif %}{% endmacro %}
 {% macro where(b) %}Shelf {{ b.shelf }} from the top, {{ ordinal(b.pos) }} of {{ b.of }} from the left{% if 'flat' in (b.marks or '')|lower %}, lying flat{% endif %}{% endmacro %}
 {% macro look_for(b) %}{{ b.appearance or '—' }}{% if b.format and b.format != 'unclear' %}; {{ b.format }}{% endif %}{% if b.jacket == 'yes' %}, in jacket{% endif %}{% if b.imprint and 'unreadable' not in b.imprint and b.imprint.strip('?. ') %}; {{ b.imprint }}{% endif %}{% endmacro %}
 {% macro card(x, pi, kind) %}
@@ -26,28 +28,46 @@
       {% if a.comps %}<dt>Sales</dt><dd>{% for c in a.comps %}<div class="small">{% if c.url %}<a href="{{ c.url }}" rel="noopener" target="_blank">${{ '{:,.0f}'.format(c.price) }}</a>{% else %}${{ '{:,.0f}'.format(c.price) }}{% endif %}{% if c.date %} ({{ c.date[:7] }}){% endif %}: {{ c.title[:110] }}</div>{% endfor %}</dd>{% endif %}
       <dt>Read as</dt><dd class="small muted">“{{ b.spine_text or '—' }}” · {{ b.look }} · {{ b.legibility }}{% if b.source == 'second read' %} · found by the second read{% endif %}{% if b.foot and (b.foot.foot_text or b.foot.logo) %} · foot: {{ b.foot.foot_text }}{% if b.foot.logo %} ({{ b.foot.logo }}){% endif %}{% endif %}</dd>
     </dl>
-    {% if feedback_url %}{% set key = pi ~ ':' ~ b.shelf ~ ':' ~ b.x0 %}{% set fb = (feedback.get(key) or {}).get('verdict') %}
-    <p class="fb" data-key="{{ key }}" data-label="{{ x.label }}" data-category="{{ x.category }}" data-value="{{ a.value or '' }}">
-      <button type="button" class="fbb{{ ' on' if fb == 'worth' }}" data-verdict="worth">Worth it</button>
-      <button type="button" class="fbb{{ ' on' if fb == 'not' }}" data-verdict="not">Not worth it</button>
-    </p>{% endif %}
+    {% if marks_url %}{% set key = pi ~ ':' ~ b.shelf ~ ':' ~ b.x0 %}{{ mark_buttons(key, x, marks.get(key), 'pull') }}{% endif %}
     <p class="links small"><a href="{{ x.links.terapeak }}" target="_blank" rel="noopener">Terapeak</a><a href="{{ x.links.ebay_sold }}" target="_blank" rel="noopener">eBay sold</a><a href="{{ x.links.abebooks }}" target="_blank" rel="noopener">AbeBooks</a></p>
   </div>
 </div>
 {% endmacro %}
-<h1>Scan of {{ job.created[:16].replace('T', ' ') }} UTC</h1>
-<p><span class="status {{ job.status }}">{{ job.status }}</span>
-  {% if job.progress %} · {{ job.progress }}{% endif %}
-  {% if job.cost %} · ${{ '%.2f' % job.cost.spent }} spent{% if job.cost.cached_calls %}, {{ job.cost.cached_calls }} saved responses reused{% endif %}{% endif %}
+<h1>Capture of {{ capture.created[:16].replace('T', ' ') }} UTC</h1>
+{% set p0 = capture.photos[0] if capture.photos else {} %}
+<p class="small muted">{{ capture.photos|length }} photo{{ 's' if capture.photos|length != 1 }}: {{ capture.photos|map(attribute='name')|join(', ') }}.
+  {% if p0 %}{{ categories[p0.category] }}{% for s, c in (p0.overrides or {}).items() %}, shelf {{ s }} {{ categories[c] }}{% endfor %}{% if p0.minimum %}, minimum ${{ p0.minimum }}{% endif %}{{ ', second read' if p0.second_read }}.{% if p0.note %} Note: {{ p0.note }}{% endif %}{% endif %}</p>
+
+<h2>Runs</h2>
+<div class="scroll"><table class="runs">
+  <tr><th>When</th><th>Baseline</th><th>Status</th><th>Cost</th><th>Pulls</th></tr>
+  {% for r in runs %}
+  <tr{% if run and r.id == run.id %} class="selected"{% endif %}>
+    <td>{% if run and r.id == run.id %}{{ r.created[:16].replace('T', ' ') }}{% else %}<a href="?run={{ r.id }}">{{ r.created[:16].replace('T', ' ') }}</a>{% endif %}</td>
+    <td>{{ baseline_text(r.baseline) }}</td>
+    <td class="status {{ r.status }}">{{ r.status }}</td>
+    <td>{% if r.cost %}${{ '%.2f' % r.cost.spent }}{% endif %}</td>
+    <td>{% if r.pulls is not none %}{{ r.pulls }}{% if r.leads %} + {{ r.leads }} lead{{ 's' if r.leads != 1 }}{% endif %}{% endif %}</td>
+  </tr>
+  {% endfor %}
+</table></div>
+{% if new_run_url %}
+<form method="post" action="{{ new_run_url }}"><button class="secondary" type="submit">Run again with the current baseline</button>
+  <span class="muted small">{{ baseline_text(baseline) }}. Saved responses are reused, so a run only pays for what the code now asks that it hasn't before.</span></form>
+{% endif %}
+
+{% if run %}
+<h2>Run of {{ run.created[:16].replace('T', ' ') }} UTC</h2>
+<p><span class="status {{ run.status }}">{{ run.status }}</span> · baseline {{ baseline_text(run.baseline) }}
+  {% if run.progress %} · {{ run.progress }}{% endif %}
+  {% if run.cost %} · ${{ '%.2f' % run.cost.spent }} spent{% if run.cost.cached_calls %}, {{ run.cost.cached_calls }} saved responses reused{% endif %}{% endif %}
   {% if credit and credit.amount is not none %} · about ${{ '%.2f' % credit.amount }} credit left on the Anthropic account{% endif %}</p>
-{% if job.error %}<p class="error">{{ job.error }}</p>{% endif %}
-{% if job.status in ('queued', 'running') %}<p class="muted small">This page refreshes itself. A dense shelf photo takes about a minute.</p>{% endif %}
-{% if can_rerun %}
-<form method="post" action="{{ rerun_url }}"><button class="secondary" type="submit">Run again</button>
-  <span class="muted small">Saved responses are reused, so a re-run only pays for anything not yet read.</span></form>
+{% if run.error %}<p class="error">{{ run.error }}</p>{% endif %}
+{% if run.status in ('queued', 'running') %}<p class="muted small">This page refreshes itself. A dense shelf photo takes about a minute.</p>{% endif %}
 {% endif %}
 
 {% if results %}
+<div id="run" data-run="{{ run.id }}">
 {% for ph in results.photos %}
 {% set pi = loop.index %}
 <h2>Photo {{ pi }}: {{ ph.name }}</h2>
@@ -94,17 +114,16 @@
 {% if ph.not_pulled %}
 <h3 style="margin-top:1.25rem">Checked and not pulled ({{ ph.not_pulled|length }})</h3>
 <div class="scroll"><table class="wide">
-  <tr><th>Book</th><th>Where</th><th>Evidence</th><th>Why not</th>{% if feedback_url %}<th></th>{% endif %}</tr>
+  <tr><th>Book</th><th>Where</th><th>Evidence</th><th>Why not</th>{% if marks_url %}<th></th>{% endif %}</tr>
   {% for x in ph.not_pulled %}
   <tr><td>{{ x.label }}</td><td>Shelf {{ x.book.shelf }}, {{ ordinal(x.book.pos) }}</td><td class="small">{{ x.assessment.signals|join('; ') }}</td><td>{{ x.assessment.reason }}</td>
-    {% if feedback_url %}{% set key = pi ~ ':' ~ x.book.shelf ~ ':' ~ x.book.x0 %}{% set fb = (feedback.get(key) or {}).get('verdict') %}
-    <td class="fb" data-key="{{ key }}" data-label="{{ x.label }}" data-category="{{ x.category }}" data-value="{{ x.assessment.value or '' }}"><button type="button" class="fbb{{ ' on' if fb == 'should' }}" data-verdict="should">Should pull</button></td>{% endif %}</tr>
+    {% if marks_url %}{% set key = pi ~ ':' ~ x.book.shelf ~ ':' ~ x.book.x0 %}<td>{{ mark_buttons(key, x, marks.get(key), 'not_pulled') }}</td>{% endif %}</tr>
   {% endfor %}
 </table></div>
 {% endif %}
 {% endfor %}
 
-<h2>About this scan</h2>
+<h2>About this run</h2>
 <dl>
   <dt>Claude cost</dt><dd>${{ '%.3f' % results.cost.spent }} for {{ results.cost.calls }} calls ({{ '{:,}'.format(results.cost.tokens.input) }} input and {{ '{:,}'.format(results.cost.tokens.output) }} output tokens); cap ${{ '%.2f' % results.cost.cap }}{% if results.cost.cached_calls %}; {{ results.cost.cached_calls }} saved responses reused{% endif %}</dd>
   <dt>Time</dt><dd>{{ results.seconds }} seconds</dd>
@@ -113,23 +132,7 @@
 </dl>
 {% if results_url %}<p class="small"><a href="{{ results_url }}">Download the full results (JSON)</a>, including every spine as read.</p>{% endif %}
 <p class="small muted">The Terapeak link needs an eBay seller sign-in, and its search format hasn't been checked yet. Boxes come from the model's estimate of each spine's position, so one can sit a spine or two off.</p>
+</div>
 {% endif %}
-{% if feedback_url and results %}
-<script>
-document.querySelectorAll('.fb').forEach(function (box) {
-  box.querySelectorAll('button').forEach(function (btn) {
-    btn.addEventListener('click', async function () {
-      var verdict = btn.classList.contains('on') ? '' : btn.dataset.verdict;
-      var body = {key: box.dataset.key, verdict: verdict, label: box.dataset.label, category: box.dataset.category, value: box.dataset.value};
-      try {
-        var r = await fetch({{ feedback_url|tojson }}, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
-        if (!r.ok) throw new Error(r.status);
-        box.querySelectorAll('button').forEach(function (b) { b.classList.remove('on'); });
-        if (verdict) btn.classList.add('on');
-      } catch (e) { alert('Could not save that. Check the connection and try again.'); }
-    });
-  });
-});
-</script>
-{% endif %}
+{% if marks_url and results %}{{ marks_script(marks_url) }}{% endif %}
 {% endblock %}

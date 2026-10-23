@@ -14,7 +14,8 @@
     <li>After about 20 idle minutes the app sleeps, and the first page takes 30–60 seconds to wake it.</li>
   </ul>
 </details>
-<form method="post" action="{{ url_for('create_job') }}" enctype="multipart/form-data" class="card">
+{% if error %}<p class="error">{{ error }}</p>{% endif %}
+<form method="post" action="{{ url_for('create_capture') }}" enctype="multipart/form-data" class="card">
   <label for="photos">Photos</label>
   <input type="file" id="photos" name="photos" accept="image/*" multiple required>
   <p class="small muted">Full resolution, straight on, about 15–30 spines across. All photos in one scan share the settings below.</p>
@@ -38,7 +39,7 @@
     <span>Second read on rare, extremely rare and signed shelves, looking for flat and hidden books <span class="muted small">(Opus; roughly doubles the cost of those shelves)</span></span></label>
 
   <p><button type="submit">Scan</button></p>
-  <p class="small muted">Each scan stops before it could spend more than ${{ '%.2f' % job_cap }} on Claude. Today: ${{ '%.2f' % spent_today }} of the ${{ '%.2f' % daily_cap }} daily limit.</p>
+  <p class="small muted">Each run stops before it could spend more than ${{ '%.2f' % job_cap }} on Claude. Today: ${{ '%.2f' % spent_today }} of the ${{ '%.2f' % daily_cap }} daily limit.</p>
 </form>
 <details class="card small"{% if credit_error %} open{% endif %}><summary>Update the credit balance</summary>
   {% if credit_error %}<p class="error">{{ credit_error }}</p>{% endif %}
@@ -50,21 +51,23 @@
   </form>
 </details>
 
-<h2>Recent scans</h2>
-{% if jobs %}
+<h2>Recent captures</h2>
+<p class="small muted">A capture is the photos as uploaded; each run reads them with the code as it stood then. Open a capture to run it again with the current code.</p>
+{% if captures %}
 <div class="scroll"><table>
-  <tr><th>When</th><th>Photos</th><th>Category</th><th>Status</th><th>Pulls</th><th>Marked</th><th>Cost</th></tr>
-  {% for j in jobs %}
+  <tr><th>When</th><th>Photos</th><th>Category</th><th>Latest run</th><th>Pulls</th><th>Marked</th><th>Cost</th><th>Baseline</th></tr>
+  {% for c in captures %}{% set r = c.latest_run or {} %}
   <tr>
-    <td><a href="{{ url_for('job_page', job_id=j.id) }}">{{ j.created[:16].replace('T', ' ') }}</a></td>
-    <td>{{ j.photos|length }}</td>
-    <td>{{ categories[j.photos[0].category] if j.photos else '' }}</td>
-    <td class="status {{ j.status }}">{{ j.status }}</td>
-    <td>{{ j.get('pulls', '') }}{% if j.get('leads') %} + {{ j.leads }} lead{{ 's' if j.leads != 1 }}{% endif %}</td>
-    <td>{{ j.marked or '' }}</td>
-    <td>{% if j.cost %}${{ '%.2f' % j.cost.spent }}{% endif %}</td>
+    <td><a href="{{ url_for('capture_page', cid=c.id) }}">{{ c.created[:16].replace('T', ' ') }}</a></td>
+    <td>{{ c.photos }}</td>
+    <td>{{ categories[c.category] if c.category in categories else c.category }}</td>
+    <td class="status {{ r.status }}">{{ r.status or '' }}</td>
+    <td>{% if r.pulls is not none %}{{ r.pulls }}{% if r.leads %} + {{ r.leads }} lead{{ 's' if r.leads != 1 }}{% endif %}{% endif %}</td>
+    <td>{{ c.marks or '' }}</td>
+    <td>{% if r.cost %}${{ '%.2f' % r.cost.spent }}{% endif %}</td>
+    <td>{% if r.baseline and r.baseline.sha %}<code>{{ r.baseline.sha[:7] }}</code>{% elif r %}<span class="muted small">before git</span>{% endif %}</td>
   </tr>
   {% endfor %}
 </table></div>
-{% else %}<p class="muted">No scans yet.</p>{% endif %}
+{% else %}<p class="muted">No captures yet.</p>{% endif %}
 {% endblock %}
