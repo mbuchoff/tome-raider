@@ -1,0 +1,74 @@
+{% extends 'base.html' %}
+{% block title %}Collections whitelist · Tome Raider{% endblock %}
+{% block body %}
+{% macro row(w) %}{% set a = answers.get(w.key) or {} %}
+<tr class="cw" data-key="{{ w.key }}" data-work="{{ w.work }}" data-author="{{ w.author or '' }}">
+  <td>{{ w.work }}<div class="small muted">{{ w.author }}</div></td>
+  <td class="small">{{ kind_names[w.kind] }}</td>
+  <td class="small">{{ w.sales }} sold{% if w.median %}, median ${{ '{:,.0f}'.format(w.median) }}{% endif %}{% if w.sales > 1 %}, up to ${{ '{:,.0f}'.format(w.max) }}{% endif %}</td>
+  <td><span class="cw-ans">
+    <button type="button" class="fbb{{ ' on' if a.decision == 'yes' }}" data-decision="yes">Keep</button>
+    <button type="button" class="fbb{{ ' on' if a.decision == 'no' }}" data-decision="no">Leave out</button>
+    <button type="button" class="cw-clear"{% if not a.decision %} hidden{% endif %}>Clear</button></span>
+    <input type="text" class="cw-note" maxlength="500" placeholder="Note (optional)" aria-label="Note on {{ w.work }}" value="{{ a.note or '' }}">
+    <span class="cw-saved small" hidden>saved</span></td>
+</tr>{% endmacro %}
+<h1>Collections whitelist</h1>
+<p>Story collections, anthologies and omnibuses are treated like paperbacks: left out unless their title is on this whitelist. Illustrated and fine-press editions are kept anyway. A book is recognised as a collection by its title ("stories", "novels", "anthology"...) or by the book notes Claude writes for each candidate.</p>
+<p class="small muted"><strong>Keep</strong> puts a title on the whitelist; <strong>Leave out</strong> records that it shouldn't be; unanswered titles are left out too. Answers apply to the next run. On the whitelist now: {{ whitelist|length }} title{{ 's' if whitelist|length != 1 }}{% if whitelist %}: {{ whitelist|map(attribute='work')|join(', ') }}{% endif %}.</p>
+
+<h2 id="added">Add a title</h2>
+<form method="post" action="{{ url_for('collections.add') }}" class="card">
+  <label for="cw-work">Title</label><input type="text" id="cw-work" name="work" maxlength="200" required placeholder="e.g. Different Seasons">
+  <label for="cw-author">Author</label><input type="text" id="cw-author" name="author" maxlength="120" placeholder="e.g. Stephen King">
+  <label for="cw-note">Note (optional)</label><input type="text" id="cw-note" name="note" maxlength="500">
+  <p><button type="submit">Add to the whitelist</button></p>
+</form>
+{% if added or defaults %}<table><tr><th>On the whitelist by hand</th><th>Note</th><th></th></tr>
+  {% for e in defaults %}<tr><td>{{ e.work }}<div class="small muted">{{ e.author }}</div></td><td class="small muted">built in</td><td></td></tr>{% endfor %}
+  {% for e in added %}<tr><td>{{ e.work }}<div class="small muted">{{ e.author }}</div></td><td class="small">{{ e.note }}</td>
+    <td><form method="post" action="{{ url_for('collections.remove') }}"><input type="hidden" name="id" value="{{ e.id }}"><button class="secondary" type="submit">Remove</button></form></td></tr>{% endfor %}
+</table>{% endif %}
+
+<h2>Found in the sales data ({{ covered|length }})</h2>
+<p class="small muted">Classified by Claude from the sale listings' titles, so a few may be wrong: a novel sold together with another, say. Highest median sale first.</p>
+<div class="scroll"><table class="wide cwt"><tr><th>Title</th><th>Kind</th><th>Sales</th><th>Whitelist</th></tr>
+{% for w in covered %}{{ row(w) }}{% endfor %}
+</table></div>
+
+<details><summary>Poetry and essay collections ({{ others|length }}): not covered by the rule</summary>
+<p class="small muted">Listed in case they should be. Answers here are kept but don't change anything yet.</p>
+<div class="scroll"><table class="wide cwt"><tr><th>Title</th><th>Kind</th><th>Sales</th><th>Whitelist</th></tr>
+{% for w in others %}{{ row(w) }}{% endfor %}
+</table></div></details>
+
+<style>
+.cwt td:last-child { min-width: 16rem; }
+.cw-ans { display: inline-flex; gap: 6px; flex-wrap: wrap; margin-bottom: 4px; }
+.cw-clear { background: transparent; color: var(--muted); border: 0; padding: 4px 6px; font-weight: 400; font-size: 0.875rem; text-decoration: underline; }
+.cw-note { padding: 6px 8px; font-size: 0.875rem; }
+.cw-saved { color: var(--ok); }
+.cwt [hidden] { display: none !important; }
+table.cwt th:nth-child(3), table.cwt td:nth-child(3) { display: table-cell; }
+</style>
+<script>
+document.querySelectorAll('tr.cw').forEach(function (row) {
+  var note = row.querySelector('.cw-note'), saved = row.querySelector('.cw-saved'), clear = row.querySelector('.cw-clear');
+  async function save(change) {
+    var body = Object.assign({key: row.dataset.key, work: row.dataset.work, author: row.dataset.author}, change);
+    try {
+      var r = await fetch({{ url_for('collections.answer')|tojson }}, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
+      if (!r.ok) throw new Error(r.status);
+      var j = await r.json();
+      row.querySelectorAll('.fbb').forEach(function (b) { b.classList.toggle('on', b.dataset.decision === j.decision); });
+      clear.hidden = !j.decision;
+      if ('note' in change) { note.value = j.note || ''; saved.hidden = false; setTimeout(function () { saved.hidden = true; }, 1500); }
+    } catch (e) { alert('Could not save that. Check the connection and try again.'); }
+  }
+  row.querySelectorAll('.fbb').forEach(function (b) { b.addEventListener('click', function () { if (!b.classList.contains('on')) save({decision: b.dataset.decision}); }); });
+  clear.addEventListener('click', function () { save({decision: ''}); });
+  note.addEventListener('change', function () { save({note: note.value}); });
+  note.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); note.blur(); } });
+});
+</script>
+{% endblock %}

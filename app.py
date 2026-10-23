@@ -17,7 +17,7 @@ Settings (environment variables):
 import datetime, hmac, mimetypes, os, queue, secrets, shutil, threading, time
 from flask import Flask, Response, abort, redirect, render_template, request, session, url_for
 from werkzeug.utils import secure_filename
-from shelfscan import credit, marks, marks_web, pipeline, repo, version
+from shelfscan import anthologies_web, credit, marks, marks_web, pipeline, repo, version
 from shelfscan import index as capture_index
 from shelfscan.claude import Claude
 from shelfscan.rules import CATEGORIES
@@ -59,6 +59,7 @@ def queue_run(cid):
 app.config['START_RUN'] = queue_run
 app.config['STORE'] = store
 app.register_blueprint(marks_web.bp)
+app.register_blueprint(anthologies_web.bp)
 
 
 def recent_captures(n=25):

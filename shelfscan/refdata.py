@@ -126,6 +126,7 @@ class Reference:
                                 [os.path.join(data_dir, f) for f in DEFAULT_PRICE_FILES] if data_dir != DATA else fetch(DEFAULT_PRICE_FILES))
         self.prices, self.price_version = load_prices(paths)
         self.rules = json.load(open(os.path.join(data_dir, 'rules.json')))
+        self._collections = None
         lines = open(os.path.join(data_dir, 'frequent-authors.tsv')).read().splitlines()[1:]
         self.frequent = []
         for ln in lines:
@@ -138,6 +139,18 @@ class Reference:
         self.always_pb = re.compile('|'.join(R['always_check_paperback_authors']), re.I)
         self.whitelist = [dict(e, _a=re.compile(e['author'], re.I) if e['author'] else None, _t=re.compile(e['title'], re.I) if e['title'] else None,
                                _p=re.compile(e['publisher'], re.I) if e['publisher'] else None) for e in R['paperback_whitelist']]
+
+    @property
+    def collections(self):
+        """The story-collection catalog and whitelist (shelfscan.anthologies), over the store the app uses."""
+        if self._collections is None:
+            from .anthologies import Collections
+            from .store import open_store
+            home = os.environ.get('SHELFSCAN_HOME')
+            try: store = open_store(os.path.join(home, 'store') if home else None)
+            except Exception: store = None
+            self._collections = Collections(store, self.rules.get('collection_whitelist'))
+        return self._collections
 
     def version(self):
         return {'prices': self.price_version, 'rules': self.rules['version']}

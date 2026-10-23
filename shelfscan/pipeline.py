@@ -3,7 +3,7 @@
 A job is a folder holding job.json (the request and its status), the uploaded photos, and after a run results.json plus images.
 run_stored() runs a stored capture this way in a temporary folder and saves the run's results and images to the store."""
 import concurrent.futures as cf, datetime, json, os, re, shutil, tempfile, threading, time, traceback
-from . import images, notes, reader, repo, rules
+from . import anthologies, images, notes, reader, repo, rules
 from .claude import Budget, CapReached, Claude
 from .refdata import Reference
 
@@ -78,6 +78,8 @@ def run(job_dir, claude, now=time.time, on_progress=None):
         progress(k, 'writing notes on the candidates')
         try: notes.add_notes(claude, pulls + leads, budget)
         except Exception as e: print(f'photo {k}: no notes ({type(e).__name__}: {e})', flush=True)     # the notes are extra; keep the results
+        if any(ref.collections.kind(x['book'])[0] for x in pulls + leads):        # collections the notes (or the price file) recognised
+            pulls, leads, not_pulled, skipped = rules.evaluate(books, shelf_category, ref, minimum_for)
         stem = f'photo{k}'
         # spines nothing could be read from get a '?' box, drawn first so the numbered boxes sit on top
         unread = [b for b in books if rules.unreadable(b)]

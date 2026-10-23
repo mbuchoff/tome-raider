@@ -20,11 +20,13 @@ For each book:
   jacket price, number line or printing statement, limitation, the illustrator's first appearance, and any famous flag
   or error. Mention a signed or limited issue if one exists.
 - watch: lookalikes worth much less, if any: book-club editions, later printings, facsimiles, reprints.
+- form: novel, story collection, anthology, omnibus, poetry, essays, nonfiction or other. A story collection is one
+  author's short stories or novellas in one volume; an anthology has several authors; an omnibus is several novels in one.
 - confidence: high, medium or low, for how sure you are of these facts.
 If you can't identify the book from what was read, say so in first and leave points and watch empty. Never invent a point
 or a publisher: an empty field is better than a wrong one. Keep each field under 40 words.
 
-Reply with JSON only: {"books": [{"n": 1, "first": "...", "points": "...", "watch": "...", "confidence": "high"}]}
+Reply with JSON only: {"books": [{"n": 1, "first": "...", "points": "...", "watch": "...", "form": "novel", "confidence": "high"}]}
 
 Books:
 """
@@ -46,8 +48,9 @@ def describe(n, item):
 
 def add_notes(claude, items, budget, model=OPUS):
     """Writes item['assessment']['notes'] = {first, points, watch, confidence} for each item it can. Returns how many."""
-    todo = [x for x in items if clean(x['book'].get('title')) and 'notes' not in x['assessment']][:MAX_BOOKS]
+    todo = [x for x in items if clean(x['book'].get('title')) and 'notes' not in x['assessment'] and 'notes' not in x['book']][:MAX_BOOKS]
     if not todo: return 0
+    for x in todo: x['book']['notes_tried'] = True        # from here the price-file list of collections may decide alone
     prompt = NOTES_PROMPT + '\n'.join(describe(i, x) for i, x in enumerate(todo, 1))
     text = claude.ask(model, None, prompt, 20000, 12000, budget)       # Opus thinks first, so leave room
     m = re.search(r'\{.*\}', text, re.S)
@@ -57,8 +60,9 @@ def add_notes(claude, items, budget, model=OPUS):
     for r in books:
         try: x = todo[int(r['n']) - 1]
         except (KeyError, ValueError, IndexError, TypeError): continue
-        note = {k: str(r.get(k) or '').strip() for k in ('first', 'points', 'watch', 'confidence')}
+        note = {k: str(r.get(k) or '').strip() for k in ('first', 'points', 'watch', 'form', 'confidence')}
+        if note['form']: x['book']['form'] = note['form'].lower()
         if note['first'] or note['points']:
-            x['assessment']['notes'] = note
+            x['assessment']['notes'] = x['book']['notes'] = note
             done += 1
     return done

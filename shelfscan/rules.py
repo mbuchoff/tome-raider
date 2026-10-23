@@ -109,6 +109,7 @@ def assess(b, category, ref, minimum):
     if clean(foot.get('imprint')) and (not imprint or '?' in imprint): imprint = clean(foot['imprint'])
     text = ' '.join([author, title, imprint, marks, b.get('spine_text') or '', b.get('appearance') or '', foot_text])
     out = dict(decision='skip', reason='', signals=[], value=None, comps=[], quick=[], why='', edition='', basis='', strength=0)
+    if b.get('notes'): out['notes'] = b['notes']                 # written once by the notes call, kept with the reading
     if unreadable(b):
         if category == 'rare' and look == 'antique' and b.get('legibility') != 'unreadable':
             out['decision'], out['reason'] = 'not pulled', 'title unreadable; an antique on a rare shelf, so check it in person'
@@ -129,7 +130,19 @@ def assess(b, category, ref, minimum):
         out['reason'] = 'paperback not on the whitelist'
         return out
 
+    # story collections, anthologies and omnibuses are treated like paperbacks: left out unless whitelisted. Illustrated and
+    # fine-press editions stay, since their value is the edition, not the texts.
+    kind, how = ref.collections.kind(b)
+    coll_ok = ref.collections.whitelisted(b) if kind else None
+    if kind and not coll_ok:
+        imp0 = ref.rx['collectible_imprints'].search(' '.join([imprint, b.get('spine_text') or '', foot_text]))
+        if not (ref.rx['illustrators'].search(text) or imp0):
+            out['reason'] = 'collection or anthology not on the whitelist'
+            out['collection'] = dict(kind=kind, how=how)
+            return out
+
     sig = out['signals']
+    if coll_ok: sig.append(f"{'omnibus' if kind == 'omnibus' else 'collection'} on the whitelist")
     if wl:
         e = wl[0]
         out['edition'] = '; '.join(dict.fromkeys(x['edition'] for x in wl))
