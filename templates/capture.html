@@ -3,7 +3,7 @@
 {% block title %}Capture {{ capture.created[:16].replace('T', ' ') }} · Tome Raider{% endblock %}
 {% block head %}{% if busy %}<meta http-equiv="refresh" content="4">{% endif %}{% endblock %}
 {% block body %}
-{% macro baseline_text(b) %}{% if b and b.sha %}<span title="commit {{ b.sha }}">code of {{ commit_time(b) }}</span>{% if b.dirty %} <span class="muted small">with uncommitted changes</span>{% endif %}{% else %}<span class="muted">before git</span>{% endif %}{% endmacro %}
+{% macro baseline_text(b) %}{% if b and b.sha %}<span title="commit {{ b.sha }}">code of {{ commit_time(b) }}</span> <code class="small" title="{{ b.sha }}">{{ b.sha[:7] }}</code>{% if b.dirty %} <span class="muted small">with uncommitted changes</span>{% endif %}{% else %}<span class="muted">before git</span>{% endif %}{% endmacro %}
 {% macro where(b) %}Shelf {{ b.shelf }} from the top, {{ ordinal(b.pos) }} of {{ b.of }} from the left{% if 'flat' in (b.marks or '')|lower %}, lying flat{% endif %}{% endmacro %}
 {% macro look_for(b) %}{{ b.appearance or '—' }}{% if b.format and b.format != 'unclear' %}; {{ b.format }}{% endif %}{% if b.jacket == 'yes' %}, in jacket{% endif %}{% if b.imprint and 'unreadable' not in b.imprint and b.imprint.strip('?. ') %}; {{ b.imprint }}{% endif %}{% endmacro %}
 {% macro card(x, pi, kind) %}
@@ -54,8 +54,10 @@
   {% endfor %}
 </table></div>
 {% if new_run_url %}
-<form method="post" action="{{ new_run_url }}"><button class="secondary" type="submit">Run again with the current baseline</button>
-  <span class="muted small">{{ baseline_text(baseline) }}. Saved responses are reused, so a run only pays for what the code now asks that it hasn't before.</span></form>
+<form method="post" action="{{ new_run_url }}"><button class="secondary" type="submit"{% if same_run %} disabled{% endif %}>Run again with the current baseline</button>
+  <span class="muted small">{% if baseline and baseline.sha %}The current baseline is {{ baseline_text(baseline) }}.{% else %}The current code isn't a git commit, so a run on it records no baseline.{% endif %}
+  {% if same_run %}This capture already has a run on it with these settings (<a href="?run={{ same_run.id }}">{{ same_run.created[:16].replace('T', ' ') }}, {{ same_run.status }}</a>), so there's nothing new to run.
+  {% else %}Saved responses are reused, so a run only pays for what the code now asks that it hasn't before.{% endif %}</span></form>
 {% endif %}
 
 {% if run %}

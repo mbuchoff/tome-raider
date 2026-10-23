@@ -86,6 +86,20 @@ def freeze_settings(store, capture):
             save_run(store, run)
 
 
+def matching_run(store, cid, baseline, capture=None):
+    """The capture's newest run on this baseline (same commit, no uncommitted changes) with the capture's current settings,
+    unless it failed or was stopped; None if there is none, so a new run would add something."""
+    if not baseline or not baseline.get('sha') or baseline.get('dirty'): return None
+    capture = capture or load_capture(store, cid)
+    want = [{k: p.get(k) for k in SETTINGS} for p in capture['photos']]
+    for run in list_runs(store, cid):
+        b = run.get('baseline') or {}
+        if (b.get('sha') == baseline['sha'] and not b.get('dirty') and run['status'] not in ('failed', 'stopped')
+                and [{k: p.get(k) for k in SETTINGS} for p in run_photos(capture, run)] == want):
+            return run
+    return None
+
+
 def run_photos(capture, run):
     """The photos with the settings a run used: its own (kept since captures were consolidated), else the capture's."""
     return (run or {}).get('photos') or capture['photos']

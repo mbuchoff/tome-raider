@@ -52,6 +52,6 @@ def rerun_marked():
     """A new run, with the current baseline, of every capture that has marks."""
     start = current_app.config.get('START_RUN')
     if not start: abort(501)
-    for cid in marks.capture_ids(store()):
+    for cid in marks.capture_ids(store()):          # START_RUN skips captures that already have a run on the current baseline
         if marks.load(store(), cid)[0]: start(cid)
     return redirect(url_for('marks.eval_page'))

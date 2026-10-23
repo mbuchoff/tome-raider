@@ -50,7 +50,10 @@ app.jinja_env.globals.update(ordinal=ordinal, categories=CATEGORIES, commit_time
 
 
 def queue_run(cid):
-    """Starts a run of the capture on the current baseline; returns its id."""
+    """Starts a run of the capture on the current baseline and returns its id; if the capture already has a run on this
+    baseline with the same settings (not failed or stopped), returns that one instead of running it twice."""
+    same = repo.matching_run(store, cid, version.baseline())
+    if same: return same['id']
     run = repo.start_run(store, cid, JOB_CAP)
     work.put((cid, run['id']))
     return run['id']
@@ -197,7 +200,8 @@ def capture_page(cid):
     if rid and not run: abort(404)
     results = repo.load_results(store, cid, run['id']) if run and run['status'] not in ('queued', 'running') else None
     busy = any(r['status'] in ('queued', 'running') for r in runs)
-    return render_template('capture.html', capture=capture, runs=runs, run=run, results=results, busy=busy,
+    same = repo.matching_run(store, cid, version.baseline(), capture)
+    return render_template('capture.html', capture=capture, runs=runs, run=run, results=results, busy=busy, same_run=same,
                            baseline=version.baseline(), new_run_url=url_for('new_run', cid=cid),
                            file_url=lambda n: url_for('run_file', cid=cid, rid=run['id'], name=n),
                            results_url=run and url_for('run_results', cid=cid, rid=run['id']),
