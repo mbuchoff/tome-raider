@@ -117,8 +117,32 @@ for path in OLD:
     p = c.get(f'/captures/{oc["id"]}')
     check(f'old results render ({os.path.basename(path)})', p.status_code == 200 and 'before git' in p.data.decode(), p.status_code)
 
-# restarting picks up a run left queued
+# marks: set on one run, shown on the page, carried to a newer run, cleared
+pull = SAMPLE['photos'][0]['pulls'][0]['book']
+key = f"1:{pull['shelf']}:{pull['x0']}"
+r = c.post(f'/captures/{cid}/marks', json={'run_id': run1['id'], 'key': key, 'verdict': 'worth'})
+check('mark saved', r.status_code == 200 and r.get_json()['verdict'] == 'worth', r.status_code)
+page = c.get(f'/captures/{cid}?run={rid2}').data.decode()
+check('mark shows on a newer run', f'data-key="{key}"' in page and 'class="fbb on" data-verdict="worth"' in page)
+check('index counts the mark', next(e for e in web.recent_captures() if e['id'] == cid)['marks'] == 1)
+r = c.post(f'/captures/{cid}/marks', json={'run_id': rid2, 'key': key, 'verdict': ''})
+check('mark cleared', r.status_code == 200 and r.get_json()['verdict'] == '' and 'class="fbb on"' not in c.get(f'/captures/{cid}').data.decode())
+
+# restarting migrates old job folders and picks up a run left queued
+old_job = os.path.join(web.JOBS, 'a1b2c3d4e5f6')
+os.makedirs(old_job)
+open(os.path.join(old_job, 'upload1.jpg'), 'wb').write(b'old photo')
+json.dump(dict(id='a1b2c3d4e5f6', created='2026-10-22T15:00:00+00:00', started='2026-10-22T15:00:01+00:00', status='done', cap=2.0,
+               photos=[dict(file='upload1.jpg', name='old.jpg', category='rare', overrides={}, minimum=None, note='', second_read=True)]),
+          open(os.path.join(old_job, 'job.json'), 'w'))
+json.dump(SAMPLE, open(os.path.join(old_job, 'results.json'), 'w'))
+json.dump({key: {'verdict': 'not', 'label': 'x', 'category': 'rare', 'value': None, 'at': '2026-10-22T16:00:00+00:00'}},
+          open(os.path.join(old_job, 'feedback.json'), 'w'))
 queued = repo.start_run(store, cid, 2.0)
 web.start()
 check('queued run resumed after a restart', wait(cid, queued['id'])['status'] == 'done')
+mruns = repo.list_runs(store, 'a1b2c3d4e5f6')
+check('old job migrated to a capture with a pre-git run', len(mruns) == 1 and mruns[0]['baseline'] is None and mruns[0]['status'] == 'done', mruns)
+page = c.get('/captures/a1b2c3d4e5f6').data.decode()
+check('migrated mark shows', 'before git' in page and 'class="fbb on" data-verdict="not"' in page)
 sys.exit(1 if check.failed else 0)

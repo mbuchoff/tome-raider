@@ -3,6 +3,10 @@
 A small web app that follows automation plan v4. You upload shelf photos and pick the shelf category, and it returns the books worth pulling. Each pull comes with a numbered box on the photo, a crop of its spine, where to find it, why it's flagged, what to check in hand, matching sales from the price file, and Terapeak, eBay and AbeBooks lookup links.
 
 ## How it works
+Each upload is a **capture**: the photos and the settings given with them. Each pass of the pipeline over a capture is a **run**, which records the **baseline** it ran on (the code's git commit and its time, from `version.json` written by deploy.sh, or empty for runs from before the code was in git). A capture's page lists its runs and shows any one of them; "Run again with the current baseline" starts a new run on the same photos after the rules change, and saved responses mean it only pays for calls the new code makes that the old one didn't. Marks belong to the capture, so they carry over to its new runs (see DESIGN.md).
+
+The worker copies a capture's photos into a temporary folder on the app's disk, runs the steps below there, then saves the run's results and images to the store and deletes the folder.
+
 1. **Shelf finding:** one Sonnet 5.5 call on a 1568 px overview of the photo returns the shelf bands.
 2. **Reading:** each shelf is cut into overlapping full-resolution crops, with red lines marking the part each crop owns and a percentage ruler along the top. Sonnet lists every spine in TSV: position, literal text, author, title, imprint, format, jacket, look, appearance and marks. Books listed by two neighbouring crops are removed in code.
 3. **Close-ups:** up to three sheets per photo of the spines read least well, each enlarged about three times, are read again (about 2–3¢). This is how the faint *Odyssey* on the fine-bindings shelf gets read.
@@ -24,10 +28,10 @@ A small web app that follows automation plan v4. You upload shelf photos and pic
 
    **Spine feet:** after a first pass of the rules, the feet of the pulls' and leads' spines are read again from enlarged close-ups (up to 36 per photo, about 1–2¢), where publishers, reprint series and book clubs put their names and logos. A book-club logo there (such as Book Club Associates' boxed "bca") or a reprint imprint drops the book, a collectible imprint adds it, and the rules run again. Books lying flat aren't checked.
 6. **Notes:** one Opus call per photo, text only (about 9¢ and 40 seconds for 15 books), writes bibliographic notes for each pull and lead from Claude's own knowledge: the first edition (year, publisher and city, UK and US), the points that identify the first printing or valuable issue, and the lookalikes worth less, with a confidence level. Generic advice is left out: the reader is an expert. Web search improved the notes on local and small-press titles in a test, but cost about 10¢ a book, so it isn't used yet.
-7. **Output:** the results page, plus `results.json` in the job folder. The photo has numbered red boxes for pulls, blue for leads, and amber "?" boxes for spines where neither a title nor an author could be read; the page counts the spines read and unreadable, per photo and per shelf. The JSON includes every spine as read, so `tests/replay.py` can re-run new rules on old scans for free.
-8. **Feedback:** each pull has "Worth it" and "Not worth it" buttons, and each book in the "not pulled" list has "Should pull". The verdicts are saved with the scan, and `/feedback.json` lists them all, for tuning the rules.
+7. **Output:** the results page, plus `results.json` under the run in the store (linked from the page). The photo has numbered red boxes for pulls, blue for leads, and amber "?" boxes for spines where neither a title nor an author could be read; the page counts the spines read and unreadable, per photo and per shelf. The JSON includes every spine as read, so `tests/replay.py` can re-run new rules on old scans for free.
+8. **Feedback:** each pull has "Worth it" and "Not worth it" buttons, and each book in the "not pulled" list has "Should pull". The marks are saved with the capture, a mark can be cleared to leave the book unanswered, and `/marks.json` lists them all; `/eval` scores runs against them, for tuning the rules.
 
-Photos in one scan are read in parallel. If the app restarts in the middle of a scan, the scan resumes, and the crops already read cost nothing the second time.
+Photos in one capture are read in parallel. If the app restarts in the middle of a run, the run starts again, and the crops already read cost nothing the second time.
 
 Saved responses are cached by a hash of the image and prompt, so running the same photo again costs nothing.
 
@@ -35,7 +39,7 @@ Saved responses are cached by a hash of the image and prompt, so running the sam
 - **Claude**, billed to the personal Anthropic key:
   - about 13–22¢ per photo on Sonnet;
   - the second read adds about 20¢ on a shelf like the children's sample.
-  - Each scan has a $2 cap, and the app stops for the day at $10. Both are app settings.
+  - Each run has a $2 cap, and the app stops starting runs for the day at $10, counted from the spend ledger. Both are app settings.
   - **Credit left:** the scan page and each scan's page show about how much credit is left on the whole Anthropic account. Anthropic has no API for the balance, so you type it in once from the Console's Billing page ("Update the credit balance" on the scan page), and the app subtracts everything the account spends from then on. It reads the spending with an Admin API key from the usage report, priced with the app's price table, which matched the Cost API to the cent on a settled day; the Cost API itself leaves out the current day and lags by hours. Type the balance in again after adding credits or an auto-reload, since purchases aren't in the API. The usage report ran 20 minutes and more behind when tested, so it is read only up to an hour ago, and the app's own spending since then comes from its ledger of paid calls (`spend.jsonl`): the app's scans show at once, and other use of the account shows after an hour. The figure is re-read at most every 2 minutes. A model the app has no price for is named next to the figure rather than counted.
 - **Azure:** App Service on the Free F1 tier ($0), in Central US, because this subscription has no F1 quota in East US or East US 2, plus a Standard locally redundant storage account (pennies a month at this volume; see Storage).
   - F1 limits: 60 CPU minutes a day, 1 GB of disk, and the app sleeps after about 20 idle minutes, so the first page after a sleep takes 30–60 seconds.
@@ -48,10 +52,11 @@ Captures, runs and marks (see DESIGN.md) are kept in the private Blob container 
 python -m venv .venv && .venv/bin/pip install -r requirements.txt
 export ANTHROPIC_API_KEY=...   # from ../anthropic.md; never print it
 SHELFSCAN_PASSCODE=pick-one SHELFSCAN_INSECURE_COOKIE=1 .venv/bin/gunicorn --bind 127.0.0.1:8765 --workers 1 --threads 8 app:app
-# or one-off from the command line, writing a static report.html:
+# or one-off from the command line: a capture and one run in a folder store under --out (out/store), plus results.json
+# and a static report.html in --out:
 .venv/bin/python cli.py photo.jpg --category rare --out /tmp/scan
 ```
-`tests/replay.py results.json` re-runs the current rules on a finished scan's readings without any API calls. `tests/dry_rules.py` does the same for the TSV readings from the earlier API test.
+Without `AZURE_STORAGE_CONNECTION_STRING` the app keeps captures in `var/store`. `tests/captures_check.py` checks uploads, runs, baselines, files, marks and the migration through the app with a fake pipeline, offline. `tests/replay.py results.json` re-runs the current rules on a finished scan's readings without any API calls. `tests/dry_rules.py` does the same for the TSV readings from the earlier API test.
 
 ## Deploy
 `AZURE_CONFIG_DIR=<isolated az profile> ./deploy.sh` signs in with the service principal in `../azure.md` and refuses the ParcelShield tenant. It then:

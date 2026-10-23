@@ -62,13 +62,11 @@ app.register_blueprint(marks_web.bp)
 
 
 def recent_captures(n=25):
-    """The newest captures' summaries, from the index; straight from the store while the index is empty."""
+    """The newest captures' summaries, from the index (rebuilt from the store if it's missing)."""
     entries = capture_index.read(store).get('captures') or []
-    if not entries:
-        for cid in repo.capture_ids(store):
-            try: entries.append(repo.summary(store, cid))
-            except NotFound: pass
-        entries.sort(key=lambda e: e['created'], reverse=True)
+    if not entries and repo.capture_ids(store):
+        capture_index.rebuild(store)
+        entries = capture_index.read(store).get('captures') or []
     return entries[:n]
 
 
@@ -91,7 +89,7 @@ def start():
     if os.path.isdir(JOBS):
         try:
             from tools import migrate_jobs
-            migrate_jobs.migrate(JOBS, store)
+            migrate_jobs.migrate(JOBS, store, log=lambda m: print(m, flush=True))
         except (ImportError, NotImplementedError) as e: print('old jobs not migrated:', e, flush=True)
     pending = []                                       # resume work interrupted by a restart; saved responses aren't paid twice
     for cid in repo.capture_ids(store):

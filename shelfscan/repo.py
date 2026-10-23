@@ -108,17 +108,6 @@ def get_run_file(store, cid, rid, name):
     return store.get_bytes(run_file_key(cid, rid, name))
 
 
-def summary(store, cid):
-    """The capture's entry in the index, in DESIGN.md's shape. Used when the index has nothing yet."""
-    capture = load_capture(store, cid)
-    run = latest_run(store, cid)
-    try: marks = len(store.get_json(marks_key(cid))[0])
-    except NotFound: marks = 0
-    p = capture['photos']
-    return dict(id=cid, created=capture['created'], photos=len(p), category=p[0]['category'] if p else '', marks=marks,
-                latest_run=run and {k: run.get(k) for k in ('id', 'status', 'created', 'pulls', 'leads', 'cost', 'baseline')})
-
-
 def run_counts(results):
     """The counts kept on run.json, from a run's results."""
     ph = results.get('photos') or []
