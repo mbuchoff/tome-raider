@@ -68,7 +68,7 @@ check('run counts and baseline', run1['pulls'] == len(SAMPLE['photos'][0]['pulls
 check('images saved under the run', store.exists(repo.run_file_key(cid, run1['id'], SAMPLE['photos'][0]['annotated'])))
 check('no working folder left', not os.listdir(web.WORK) if os.path.isdir(web.WORK) else True)
 page = c.get(f'/captures/{cid}').data.decode()
-check('capture page: runs table and results', 'Runs' in page and 'Run again with the current baseline' in page and 'Photo 1' in page
+check('capture page: runs table and results', 'Runs' in page and 'Run against the current baseline' in page and 'Photo 1' in page
       and 'Worth it' in page and 'Should pull' in page and f'data-run="{run1["id"]}"' in page and 'test shelf' in page)
 check('mark controls post to the capture', f'/captures/{cid}/marks' in page)
 

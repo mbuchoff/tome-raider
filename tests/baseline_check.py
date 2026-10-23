@@ -1,4 +1,4 @@
-"""Checks the runs table's baselines and the "Run again with the current baseline" button: it names the current commit and
+"""Checks the runs table's baselines and the "Run against the current baseline" button: it names the current commit and
 is disabled while the capture already has a run on it with the same settings. Folder store, fake pipeline, no Claude calls.
 usage: python tests/baseline_check.py"""
 import copy, glob, io, json, os, sys, tempfile, time
@@ -54,17 +54,17 @@ current['b'] = A
 cid = upload('rare'); runs = wait(cid)
 page = c.get(f'/captures/{cid}').data.decode()
 check('runs table shows the commit time and its SHA', 'code of 2026-10-23 21:29 UTC' in page and '<code class="small" title="' + A['sha'] + '">aaaaaaa</code>' in page, page[:0])
-check('the button names the current baseline', 'The current baseline is' in page and 'aaaaaaa' in page.split('The current baseline is')[1][:400])
-check('and is disabled: this capture already ran on it', 'type="submit" disabled>Run again' in page and 'already has a run on it' in page)
+check('the button names the current baseline', 'Run against the current baseline (aaaaaaa)</button>' in page)
+check('and is disabled: this capture already ran on it', '<button class="secondary" type="submit" disabled title="This capture already has a run on aaaaaaa' in page)
 r = c.post(f'/captures/{cid}/runs')
 check('posting anyway starts nothing', len(wait(cid)) == 1 and runs[0]['id'] in r.headers['Location'], r.headers.get('Location'))
 
 current['b'] = B
 page = c.get(f'/captures/{cid}').data.decode()
-check('a new commit enables it', 'type="submit">Run again' in page and 'bbbbbbb' in page.split('The current baseline is')[1][:400])
+check('a new commit enables it', 'type="submit">Run against the current baseline (bbbbbbb)</button>' in page)
 c.post(f'/captures/{cid}/runs'); runs = wait(cid)
 check('and runs it', len(runs) == 2 and runs[0]['baseline']['sha'] == B['sha'])
-check('disabled again after', 'type="submit" disabled>Run again' in c.get(f'/captures/{cid}').data.decode())
+check('disabled again after', 'type="submit" disabled title=' in c.get(f'/captures/{cid}').data.decode())
 
 upload('extreme'); runs = wait(cid)
 check('a repeat upload with new settings still runs', len(runs) == 3 and runs[0]['photos'][0]['category'] == 'extreme')
@@ -74,10 +74,10 @@ check('the same upload again runs nothing new', len(runs) == 3)
 current['b'] = dict(B, sha='c' * 40); fail.append('boom')
 c.post(f'/captures/{cid}/runs'); runs = wait(cid)
 check('a failed run on the baseline', runs[0]['status'] == 'failed')
-check('leaves the button enabled to retry', 'type="submit">Run again' in c.get(f'/captures/{cid}').data.decode())
+check('leaves the button enabled to retry', 'type="submit">Run against' in c.get(f'/captures/{cid}').data.decode())
 current['b'] = dict(B, dirty=True)
-check('uncommitted changes never count as run', 'type="submit">Run again' in c.get(f'/captures/{cid}').data.decode())
+check('uncommitted changes never count as run', 'type="submit">Run against' in c.get(f'/captures/{cid}').data.decode())
 current['b'] = None
 page = c.get(f'/captures/{cid}').data.decode()
-check('no git: enabled, and says so', 'type="submit">Run again' in page and "isn't a git commit" in page)
+check('no git: enabled, without a SHA', 'type="submit">Run against the current baseline</button>' in page)
 sys.exit(1 if check.failed else 0)

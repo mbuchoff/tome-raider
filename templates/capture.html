@@ -54,10 +54,7 @@
   {% endfor %}
 </table></div>
 {% if new_run_url %}
-<form method="post" action="{{ new_run_url }}"><button class="secondary" type="submit"{% if same_run %} disabled{% endif %}>Run again with the current baseline</button>
-  <span class="muted small">{% if baseline and baseline.sha %}The current baseline is {{ baseline_text(baseline) }}.{% else %}The current code isn't a git commit, so a run on it records no baseline.{% endif %}
-  {% if same_run %}This capture already has a run on it with these settings (<a href="?run={{ same_run.id }}">{{ same_run.created[:16].replace('T', ' ') }}, {{ same_run.status }}</a>), so there's nothing new to run.
-  {% else %}Saved responses are reused, so a run only pays for what the code now asks that it hasn't before.{% endif %}</span></form>
+<form method="post" action="{{ new_run_url }}"><button class="secondary" type="submit"{% if same_run %} disabled title="This capture already has a run on {{ baseline.sha[:7] }} with these settings"{% endif %}>Run against the current baseline{% if baseline and baseline.sha %} ({{ baseline.sha[:7] }}){% endif %}</button></form>
 {% endif %}
 
 {% if run %}
