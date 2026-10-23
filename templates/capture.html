@@ -34,16 +34,18 @@
 </div>
 {% endmacro %}
 <h1>Capture of {{ capture.created[:16].replace('T', ' ') }} UTC</h1>
+{% macro settings_text(p0) %}{% if p0 %}{{ categories[p0.category] }}{% for s, c in (p0.overrides or {}).items() %}, shelf {{ s }} {{ categories[c] }}{% endfor %}{% if p0.minimum %}, minimum ${{ p0.minimum }}{% endif %}{{ ', second read' if p0.second_read }}{% if p0.note %}; note: {{ p0.note }}{% endif %}{% endif %}{% endmacro %}
 {% set p0 = capture.photos[0] if capture.photos else {} %}
 <p class="small muted">{{ capture.photos|length }} photo{{ 's' if capture.photos|length != 1 }}: {{ capture.photos|map(attribute='name')|join(', ') }}.
-  {% if p0 %}{{ categories[p0.category] }}{% for s, c in (p0.overrides or {}).items() %}, shelf {{ s }} {{ categories[c] }}{% endfor %}{% if p0.minimum %}, minimum ${{ p0.minimum }}{% endif %}{{ ', second read' if p0.second_read }}.{% if p0.note %} Note: {{ p0.note }}{% endif %}{% endif %}</p>
+  Next run: {{ settings_text(p0) }}. Uploading the same photos again adds a run here.</p>
 
 <h2>Runs</h2>
 <div class="scroll"><table class="runs">
-  <tr><th>When</th><th>Baseline</th><th>Status</th><th>Cost</th><th>Pulls</th></tr>
+  <tr><th>When</th><th>Settings</th><th>Baseline</th><th>Status</th><th>Cost</th><th>Pulls</th></tr>
   {% for r in runs %}
   <tr{% if run and r.id == run.id %} class="selected"{% endif %}>
     <td>{% if run and r.id == run.id %}{{ r.created[:16].replace('T', ' ') }}{% else %}<a href="?run={{ r.id }}">{{ r.created[:16].replace('T', ' ') }}</a>{% endif %}</td>
+    <td class="small">{{ settings_text((r.photos or capture.photos)[0] if (r.photos or capture.photos) else {}) }}</td>
     <td>{{ baseline_text(r.baseline) }}</td>
     <td class="status {{ r.status }}">{{ r.status }}</td>
     <td>{% if r.cost %}${{ '%.2f' % r.cost.spent }}{% endif %}</td>

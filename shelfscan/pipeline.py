@@ -146,7 +146,7 @@ def run_stored(store, cid, rid, claude, work_root):
     try:
         for p in capture['photos']:
             with open(os.path.join(d, p['file']), 'wb') as f: f.write(repo.get_photo(store, cid, p['file']))
-        save_job(d, dict(id=cid, created=capture['created'], status='queued', cap=run_.get('cap') or 2.0, photos=capture['photos']))
+        save_job(d, dict(id=cid, created=capture['created'], status='queued', cap=run_.get('cap') or 2.0, photos=repo.run_photos(capture, run_)))
         job, results = run(d, claude, on_progress=mirror)
         uploads = {p['file'] for p in capture['photos']} | {'job.json', 'results.json'}
         for name in sorted(os.listdir(d)):

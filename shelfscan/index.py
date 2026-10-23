@@ -17,7 +17,9 @@ def summary(store, cid):
     try: marks, _ = store.get_json(repo.marks_key(cid))
     except NotFound: marks = {}
     photos = cap.get('photos') or []
-    return {'id': cid, 'created': cap.get('created'), 'photos': len(photos), 'category': photos[0].get('category') if photos else None,
+    used = repo.run_photos(cap, run)
+    return {'id': cid, 'created': cap.get('created'), 'photos': len(photos), 'category': used[0].get('category') if used else None,
+            'fingerprint': [p.get('sha256') for p in photos] if all(p.get('sha256') for p in photos) else None,
             'latest_run': {k: run.get(k) for k in RUN_FIELDS} if run else None,
             'marks': sum(1 for m in marks.values() if m.get('verdict'))}
 
@@ -50,5 +52,5 @@ def read(store):
 
 def rebuild(store):
     """Recomputes every summary from the captures in the store."""
-    caps = [s for s in (summary(store, cid) for cid in store.children('captures/') if cid != 'index.json') if s]
+    caps = [s for s in (summary(store, cid) for cid in repo.capture_ids(store)) if s]      # skips index.json and aliases.json
     _write(store, lambda _: caps)

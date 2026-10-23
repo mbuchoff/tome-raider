@@ -26,9 +26,13 @@ captures/<cid>/runs/<rid>/files/<name>                annotated photos and spine
 
 - Capture ids: 12 hex characters, as job ids are today (old job ids are kept as capture ids). Run ids sort by time:
   `YYYYMMDDTHHMMSSZ-xxxx` (UTC, then 4 hex characters).
-- `capture.json`: `{"id", "created", "photos": [{"file", "name", "category", "overrides", "minimum", "note", "second_read"}]}`.
+- `capture.json`: `{"id", "created", "photos": [{"file", "name", "sha256", "category", "overrides", "minimum", "note", "second_read"}]}`.
+  The photos' SHA-256s are the capture's identity: an upload of the same photos becomes a new run of the existing capture.
+  The settings are the latest ones, used for the next run.
+- `captures/aliases.json`: `{"<merged capture id>": "<capture it was merged into>"}`, written by tools/consolidate.py.
 - `run.json`: `{"id", "capture_id", "created", "started", "finished", "status", "progress", "error", "cap", "cost",
-  "baseline", "pulls", "leads", "spines", "unreadable"}`. status: queued, running, done, failed, stopped.
+  "baseline", "photos", "pulls", "leads", "spines", "unreadable"}`; `photos` are the settings the run used (runs from before
+  they were kept fall back to the capture's). status: queued, running, done, failed, stopped.
 - `marks.json`: `{"<mark id>": {"verdict", "label", "category", "value", "at", "run_id", "book": {"photo", "shelf", "x0",
   "x1", "y0", "y1", "title", "author"}}}`. The mark id is made when the mark is first set; `book` is the book as the run that
   was shown read it (photo is 1-based), so the mark can be matched to the same book in other runs.

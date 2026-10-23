@@ -177,13 +177,18 @@ def create_capture():
     except ValueError: minimum = None
     settings = dict(category=category, overrides={str(k): v for k, v in pipeline.parse_overrides(request.form.get('overrides')).items()},
                     minimum=minimum, note=request.form.get('note', '')[:300], second_read=request.form.get('second_read') == '1')
-    capture = repo.create_capture(store, [(secure_filename(f.filename), f.read()) for f in files], settings)
-    queue_run(capture['id'])
-    return redirect(url_for('capture_page', cid=capture['id']))
+    photos = [(secure_filename(f.filename), f.read()) for f in files]
+    cid = repo.find_capture(store, repo.fingerprint([data for _, data in photos]))
+    if cid: repo.update_settings(store, cid, settings)          # the same photos again: a new run of that capture
+    else: cid = repo.create_capture(store, photos, settings)['id']
+    queue_run(cid)
+    return redirect(url_for('capture_page', cid=cid))         # the page shows the newest run
 
 
 @app.route('/captures/<cid>')
 def capture_page(cid):
+    to = repo.valid_id(cid) and not store.exists(repo.capture_key(cid)) and repo.resolve_alias(store, cid)
+    if to: return redirect(url_for('capture_page', cid=to, **request.args), 301)       # merged into another capture
     capture = capture_or_404(cid)
     runs = repo.list_runs(store, cid)
     rid = request.args.get('run')
