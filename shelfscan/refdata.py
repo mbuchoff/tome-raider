@@ -2,12 +2,33 @@
 
 The price file is one or more spreadsheets (.xlsx) or CSV files of sold listings. Columns are found by header name,
 so a replacement file in the same layout needs no code change. Set SHELFSCAN_PRICE_FILES to a comma-separated list of
-paths to use other files."""
+paths to use other files.
+
+The shop's sales spreadsheets aren't in the repository: they live in the private storage container under reference/, and
+are fetched into a local cache the first time they're needed (a copy in data/ is used instead when present)."""
 import csv, datetime, hashlib, json, os, re, statistics
 from .xlsx_read import read as read_xlsx
 
 DATA = os.environ.get('SHELFSCAN_DATA') or os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'data')
 DEFAULT_PRICE_FILES = ['sales_report.xlsx', 'master_list_2022.xlsx']
+
+
+def fetch(names, cache=None):
+    """Local paths for these price files: data/<name> if present, else a cached copy of the store's reference/<name>."""
+    cache = cache or os.path.join(os.environ.get('SHELFSCAN_HOME') or os.path.join(DATA, '..', 'var'), 'reference')
+    out = []
+    for n in names:
+        p = os.path.join(DATA, n)
+        if not os.path.exists(p):
+            p = os.path.join(cache, n)
+            if not os.path.exists(p):
+                from .store import open_store
+                os.makedirs(cache, exist_ok=True)
+                data = open_store().get_bytes(f'reference/{n}')        # raises NotFound if the store has no copy
+                tmp = f'{p}.{os.getpid()}.tmp'
+                open(tmp, 'wb').write(data); os.replace(tmp, p)
+        out.append(p)
+    return out
 
 # header names seen in the provided files, lower case; the first one present wins
 COLUMNS = {'title': ['title', 'full title', 'item title'], 'price': ['sale price', 'price', 'sold price'],
@@ -101,7 +122,8 @@ class Reference:
     def __init__(self, data_dir=DATA, price_files=None):
         self.data_dir = data_dir
         env = os.environ.get('SHELFSCAN_PRICE_FILES')
-        paths = price_files or ([p.strip() for p in env.split(',') if p.strip()] if env else [os.path.join(data_dir, f) for f in DEFAULT_PRICE_FILES])
+        paths = price_files or ([p.strip() for p in env.split(',') if p.strip()] if env else
+                                [os.path.join(data_dir, f) for f in DEFAULT_PRICE_FILES] if data_dir != DATA else fetch(DEFAULT_PRICE_FILES))
         self.prices, self.price_version = load_prices(paths)
         self.rules = json.load(open(os.path.join(data_dir, 'rules.json')))
         lines = open(os.path.join(data_dir, 'frequent-authors.tsv')).read().splitlines()[1:]
