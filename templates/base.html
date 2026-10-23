@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{% block title %}Shelf Scanner{% endblock %}</title>
+<title>{% block title %}Tome Raider{% endblock %}</title>
 {% block head %}{% endblock %}
 <style>
 :root { --bg: #fafaf7; --fg: #1d1d1b; --muted: #6b6a64; --card: #ffffff; --line: #e3e1da; --accent: #b3261e; --accent-fg: #fff; --ok: #2e6b3a; --warn: #8a5a00; }
@@ -57,7 +57,7 @@ details summary { cursor: pointer; }
 </style>
 </head>
 <body>
-<header class="top"><a href="{{ url_for('index') if url_for is defined else '#' }}">Shelf Scanner</a><span class="muted small">proof of concept</span></header>
+<header class="top"><a href="{{ url_for('index') if url_for is defined else '#' }}">Tome Raider</a><span class="muted small">proof of concept</span></header>
 <main>{% block body %}{% endblock %}</main>
 </body>
 </html>

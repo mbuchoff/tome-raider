@@ -1,4 +1,6 @@
-# Shelf Scanner proof of concept
+# Tome Raider
+
+A proof of concept that spots the books worth pulling in bookshelf photos.
 
 A small web app that follows automation plan v4. You upload shelf photos and pick the shelf category, and it returns the books worth pulling. Each pull comes with a numbered box on the photo, a crop of its spine, where to find it, why it's flagged, what to check in hand, matching sales from the price file, and Terapeak, eBay and AbeBooks lookup links.
 

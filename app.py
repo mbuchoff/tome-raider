@@ -1,4 +1,4 @@
-"""Shelf Scanner proof of concept: a small web app that takes shelf photos and returns the books worth pulling.
+"""Tome Raider (proof of concept): a small web app that takes shelf photos and returns the books worth pulling.
 
 A capture is the photos and settings as uploaded; each run is one pass of the pipeline over a capture, recording the code
 version (baseline) it ran on, so an old capture can be run again after the rules change (see DESIGN.md).
@@ -84,8 +84,9 @@ def worker():
             print('run', cid, rid, 'failed:', e, flush=True)
 
 
-def start():
-    shutil.rmtree(WORK, ignore_errors=True)            # working folders left by a restart; their runs start again below
+def boot():
+    """Copies old job folders into the store (once), requeues interrupted runs, then works the queue. Runs in the background,
+    so the app answers at once while a first migration uploads the old scans."""
     if os.path.isdir(JOBS):
         try:
             from tools import migrate_jobs
@@ -96,7 +97,12 @@ def start():
         for run in repo.list_runs(store, cid):
             if run['status'] in ('queued', 'running'): pending.append((run['created'], cid, run['id']))
     for _, cid, rid in sorted(pending): work.put((cid, rid))
-    threading.Thread(target=worker, daemon=True).start()
+    worker()
+
+
+def start():
+    shutil.rmtree(WORK, ignore_errors=True)            # working folders left by a restart; their runs start again in boot()
+    threading.Thread(target=boot, daemon=True).start()
 
 
 def capture_or_404(cid):

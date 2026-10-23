@@ -1,6 +1,6 @@
 {% extends 'base.html' %}
 {% from '_marks.html' import mark_buttons, marks_script %}
-{% block title %}Capture {{ capture.created[:16].replace('T', ' ') }} · Shelf Scanner{% endblock %}
+{% block title %}Capture {{ capture.created[:16].replace('T', ' ') }} · Tome Raider{% endblock %}
 {% block head %}{% if busy %}<meta http-equiv="refresh" content="4">{% endif %}{% endblock %}
 {% block body %}
 {% macro baseline_text(b) %}{% if b and b.sha %}<code>{{ b.sha[:7] }}</code> <span class="muted small">{{ (b.committed_at or '')[:16].replace('T', ' ') }}{% if b.dirty %}, with uncommitted changes{% endif %}</span>{% else %}<span class="muted">before git</span>{% endif %}{% endmacro %}

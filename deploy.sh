@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Deploys the Shelf Scanner POC to Azure App Service on the Free (F1) tier, in the personal subscription only.
+# Deploys the Tome Raider proof of concept to Azure App Service on the Free (F1) tier, in the personal subscription only.
 #
 # Reads ../azure.md (service principal), ../anthropic.md (Claude API key), ../admin-claude-key.md (optional: an Admin API key,
 # used only to read the account's spending for the "credit left" figure), ../azure-storage.md (optional: the storage

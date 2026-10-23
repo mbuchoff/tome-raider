@@ -12,10 +12,8 @@ def summary(store, cid):
     """This capture's index entry from its capture.json, newest run.json and marks.json; None if there's no capture."""
     try: cap, _ = store.get_json(repo.capture_key(cid))
     except NotFound: return None
-    run = None
-    for rid in sorted(store.children(f'captures/{cid}/runs/'), reverse=True):          # run ids sort by time
-        try: run, _ = store.get_json(repo.run_key(cid, rid)); break
-        except NotFound: continue
+    runs = repo.list_runs(store, cid)                  # newest first by creation time; run ids only go to the second
+    run = runs[0] if runs else None
     try: marks, _ = store.get_json(repo.marks_key(cid))
     except NotFound: marks = {}
     photos = cap.get('photos') or []

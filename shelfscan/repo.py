@@ -88,7 +88,16 @@ def list_runs(store, cid):
     for rid in store.children(f'captures/{cid}/runs/'):
         try: runs.append(load_run(store, cid, rid))
         except NotFound: pass                       # a run folder with no run.json yet
-    return sorted(runs, key=lambda r: (datetime.datetime.fromisoformat(r['created']), r['id']), reverse=True)
+    return sorted(runs, key=_when, reverse=True)
+
+
+def _when(run):
+    """A run's creation time for sorting, from created (to the microsecond) or else from its id (to the second)."""
+    try: t = datetime.datetime.fromisoformat(run['created'])
+    except (KeyError, TypeError, ValueError):
+        try: t = datetime.datetime.strptime(run['id'][:16], '%Y%m%dT%H%M%SZ').replace(tzinfo=datetime.timezone.utc)
+        except (KeyError, ValueError): t = datetime.datetime.min.replace(tzinfo=datetime.timezone.utc)
+    return t, run.get('id', '')
 
 
 def latest_run(store, cid, done_only=False):
