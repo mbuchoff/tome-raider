@@ -1,0 +1,33 @@
+{# Mark controls for the capture page. Placeholder with today's buttons; the marks work replaces the insides, keeping the
+   macro names and arguments. book_key is 'photo:shelf:x0' for the run shown; item is a pull, lead or not-pulled entry;
+   mark is the matched mark or None; kind is 'pull' (Worth it / Not worth it) or 'not_pulled' (Should pull). #}
+{% macro mark_buttons(book_key, item, mark, kind) %}
+{% set v = (mark or {}).get('verdict') %}
+<p class="fb" data-key="{{ book_key }}" data-label="{{ item.label }}" data-category="{{ item.category }}" data-value="{{ item.assessment.value or '' }}">
+  {% if kind == 'pull' %}
+  <button type="button" class="fbb{{ ' on' if v == 'worth' }}" data-verdict="worth">Worth it</button>
+  <button type="button" class="fbb{{ ' on' if v == 'not' }}" data-verdict="not">Not worth it</button>
+  {% else %}
+  <button type="button" class="fbb{{ ' on' if v == 'should' }}" data-verdict="should">Should pull</button>
+  {% endif %}
+</p>
+{% endmacro %}
+
+{% macro marks_script(marks_url) %}
+<script>
+document.querySelectorAll('.fb').forEach(function (box) {
+  box.querySelectorAll('button').forEach(function (btn) {
+    btn.addEventListener('click', async function () {
+      var verdict = btn.classList.contains('on') ? '' : btn.dataset.verdict;
+      var body = {key: box.dataset.key, verdict: verdict, label: box.dataset.label, category: box.dataset.category, value: box.dataset.value};
+      try {
+        var r = await fetch({{ marks_url|tojson }}, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
+        if (!r.ok) throw new Error(r.status);
+        box.querySelectorAll('button').forEach(function (b) { b.classList.remove('on'); });
+        if (verdict) btn.classList.add('on');
+      } catch (e) { alert('Could not save that. Check the connection and try again.'); }
+    });
+  });
+});
+</script>
+{% endmacro %}
