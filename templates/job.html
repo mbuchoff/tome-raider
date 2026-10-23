@@ -1,0 +1,135 @@
+{% extends 'base.html' %}
+{% block title %}Scan {{ job.created[:16].replace('T', ' ') }} · Shelf Scanner{% endblock %}
+{% block head %}{% if job.status in ('queued', 'running') %}<meta http-equiv="refresh" content="4">{% endif %}{% endblock %}
+{% block body %}
+{% macro where(b) %}Shelf {{ b.shelf }} from the top, {{ ordinal(b.pos) }} of {{ b.of }} from the left{% if 'flat' in (b.marks or '')|lower %}, lying flat{% endif %}{% endmacro %}
+{% macro look_for(b) %}{{ b.appearance or '—' }}{% if b.format and b.format != 'unclear' %}; {{ b.format }}{% endif %}{% if b.jacket == 'yes' %}, in jacket{% endif %}{% if b.imprint and 'unreadable' not in b.imprint and b.imprint.strip('?. ') %}; {{ b.imprint }}{% endif %}{% endmacro %}
+{% macro card(x, pi, kind) %}
+{% set b = x.book %}{% set a = x.assessment %}{% set copies = x.copies or [] %}
+<div class="card pull">
+  <a href="{{ file_url(x.thumb) }}"><img src="{{ file_url(x.thumb) }}" alt="Spine of {{ x.label }}"></a>
+  <div>
+    <h3><span class="badge {{ kind }}">{{ x.n }}</span>{{ x.label }}{% if copies %} <span class="muted small">· {{ copies|length + 1 }} copies</span>{% endif %}</h3>
+    <dl>
+      <dt>Where</dt><dd>{{ where(b) }}</dd>
+      <dt>Look for</dt><dd>{{ look_for(b) }}</dd>
+      <dt>Why</dt><dd>{{ a.why }}</dd>
+      {% if a.edition %}<dt>Edition</dt><dd>{{ a.edition }}</dd>{% endif %}
+      {% if a.notes %}<dt>First edition</dt><dd>{{ a.notes.first }}{% if a.notes.confidence %} <span class="muted small">(Claude's notes, {{ a.notes.confidence }} confidence)</span>{% endif %}</dd>
+      {% if a.notes.points %}<dt>Points</dt><dd>{{ a.notes.points }}</dd>{% endif %}
+      {% if a.notes.watch %}<dt>Watch for</dt><dd>{{ a.notes.watch }}</dd>{% endif %}{% endif %}
+      {% if a.quick %}<dt>Check</dt><dd>{{ a.quick|join('. ') }}</dd>{% endif %}
+      {% if copies %}<dt>Other copies</dt><dd>The copy above looks the most promising. Check these too:
+        {% for c in copies %}<div class="copy small">{% if c.thumb %}<a href="{{ file_url(c.thumb) }}"><img src="{{ file_url(c.thumb) }}" alt="Spine of another copy of {{ x.label }}"></a>{% endif %}
+          <span>{{ where(c.book) }}: {{ look_for(c.book) }}; {{ c.book.look }}{% if c.assessment.value and c.assessment.value != a.value %}; about ${{ '{:,.0f}'.format(c.assessment.value) }}{% endif %}</span></div>{% endfor %}</dd>{% endif %}
+      <dt>Value</dt><dd>{% if a.value %}about ${{ '{:,.0f}'.format(a.value) }}{% if a.basis %}, from {{ a.basis }}{% if 'rough' in a.basis %}: the lower quartile of their sales{% endif %}{% elif a.comps|length > 1 %}, the median of matching sales{% endif %}{% else %}no matching sales in the price file{% endif %}</dd>
+      {% if a.comps %}<dt>Sales</dt><dd>{% for c in a.comps %}<div class="small">{% if c.url %}<a href="{{ c.url }}" rel="noopener" target="_blank">${{ '{:,.0f}'.format(c.price) }}</a>{% else %}${{ '{:,.0f}'.format(c.price) }}{% endif %}{% if c.date %} ({{ c.date[:7] }}){% endif %}: {{ c.title[:110] }}</div>{% endfor %}</dd>{% endif %}
+      <dt>Read as</dt><dd class="small muted">“{{ b.spine_text or '—' }}” · {{ b.look }} · {{ b.legibility }}{% if b.source == 'second read' %} · found by the second read{% endif %}{% if b.foot and (b.foot.foot_text or b.foot.logo) %} · foot: {{ b.foot.foot_text }}{% if b.foot.logo %} ({{ b.foot.logo }}){% endif %}{% endif %}</dd>
+    </dl>
+    {% if feedback_url %}{% set key = pi ~ ':' ~ b.shelf ~ ':' ~ b.x0 %}{% set fb = (feedback.get(key) or {}).get('verdict') %}
+    <p class="fb" data-key="{{ key }}" data-label="{{ x.label }}" data-category="{{ x.category }}" data-value="{{ a.value or '' }}">
+      <button type="button" class="fbb{{ ' on' if fb == 'worth' }}" data-verdict="worth">Worth it</button>
+      <button type="button" class="fbb{{ ' on' if fb == 'not' }}" data-verdict="not">Not worth it</button>
+    </p>{% endif %}
+    <p class="links small"><a href="{{ x.links.terapeak }}" target="_blank" rel="noopener">Terapeak</a><a href="{{ x.links.ebay_sold }}" target="_blank" rel="noopener">eBay sold</a><a href="{{ x.links.abebooks }}" target="_blank" rel="noopener">AbeBooks</a></p>
+  </div>
+</div>
+{% endmacro %}
+<h1>Scan of {{ job.created[:16].replace('T', ' ') }} UTC</h1>
+<p><span class="status {{ job.status }}">{{ job.status }}</span>
+  {% if job.progress %} · {{ job.progress }}{% endif %}
+  {% if job.cost %} · ${{ '%.2f' % job.cost.spent }} spent{% if job.cost.cached_calls %}, {{ job.cost.cached_calls }} saved responses reused{% endif %}{% endif %}
+  {% if credit and credit.amount is not none %} · about ${{ '%.2f' % credit.amount }} credit left on the Anthropic account{% endif %}</p>
+{% if job.error %}<p class="error">{{ job.error }}</p>{% endif %}
+{% if job.status in ('queued', 'running') %}<p class="muted small">This page refreshes itself. A dense shelf photo takes about a minute.</p>{% endif %}
+{% if can_rerun %}
+<form method="post" action="{{ rerun_url }}"><button class="secondary" type="submit">Run again</button>
+  <span class="muted small">Saved responses are reused, so a re-run only pays for anything not yet read.</span></form>
+{% endif %}
+
+{% if results %}
+{% for ph in results.photos %}
+{% set pi = loop.index %}
+<h2>Photo {{ pi }}: {{ ph.name }}</h2>
+{% if ph.note %}<p><strong>Note:</strong> {{ ph.note }}</p>{% endif %}
+{% set counted = ph.unreadable is defined %}
+{% set check = ph.shelves and not ph.shelves|rejectattr('check_order')|list %}
+{% if counted and ph.books %}{% set in_person = ph.not_pulled|selectattr('assessment.reason', 'equalto', 'title unreadable; an antique on a rare shelf, so check it in person')|list|length %}
+<p><strong>{{ ph.books }} spines found: {{ ph.books - ph.unreadable }} read, {{ ph.unreadable }} unreadable.</strong>
+  {% if ph.unreadable %}<span class="small muted">Unreadable spines have amber <span class="badge unread">?</span> boxes on the photo{% if in_person %}; {{ in_person }} of them {{ 'is an antique' if in_person == 1 else 'are antiques' }} listed under “Checked and not pulled” to look at in person{% endif %}.</span>{% endif %}</p>
+{% endif %}
+<p class="small muted">{% if not counted %}{{ ph.books }} books read on {{ ph.shelves|length }} shelves. {% endif %}
+  {% for s in ph.shelves %}Shelf {{ s.shelf }}: {{ categories[s.category] }}, {{ s.books }} spines{% if s.unreadable %} ({{ s.unreadable }} unreadable){% endif %}, {% if s.check_order %}no minimum{% else %}minimum ${{ s.minimum }}{% endif %}{{ '; ' if not loop.last else '.' }}{% endfor %}
+  {% if ph.skipped %} Left out: {% for k, v in ph.skipped.items() if v and not (counted and k == 'unreadable') %}{{ v }} {{ k }}{{ ', ' if not loop.last else '' }}{% endfor %}.{% endif %}</p>
+<a href="{{ file_url(ph.annotated) }}"><img class="photo" src="{{ file_url(ph.annotated) }}" alt="Photo {{ pi }} with the pulls and leads boxed and numbered{% if counted %}, and unreadable spines marked with a question mark{% endif %}"></a>
+{% if counted and ph.books %}<p class="small muted legend"><span><span class="badge">1</span>{{ 'check order' if check else 'worth pulling' }}</span> {% if ph.leads %}<span><span class="badge lead">{{ ph.pulls|length + 1 }}</span>lesser-known lead</span> {% endif %}<span><span class="badge unread">?</span>couldn't be read</span></p>{% endif %}
+
+{% if not ph.books %}
+<p class="error">No bookshelves were found in this photo. Use a straight-on photo of shelves, with the spines filling most of the frame.</p>
+{% elif check %}
+<h3 style="margin-top:1.25rem">Check order: {{ ph.pulls|length }} book{{ 's' if ph.pulls|length != 1 }}, likeliest value first</h3>
+<p class="small muted">These shelves are priced high already, so there's no minimum: every book with a sign of value is listed, the likeliest value first, then books with no price evidence, strongest signs first. Age alone doesn't list a book. First-edition notes are from Claude's own knowledge, not a bibliography or web search, and each card says how sure they are.</p>
+{% if ph.pulls %}<div class="scroll"><table class="checklist">
+  <tr><th>#</th><th>Book</th><th>Likely value</th><th>What to look for</th></tr>
+  {% for x in ph.pulls %}{% set a = x.assessment %}
+  <tr><td><span class="badge">{{ x.n }}</span></td><td>{{ x.label }}{% if x.copies %} <span class="muted small">· {{ x.copies|length + 1 }} copies</span>{% endif %}
+    <div class="small muted">Shelf {{ x.book.shelf }}, {{ ordinal(x.book.pos) }} from the left</div></td>
+    <td>{% if a.value %}about ${{ '{:,.0f}'.format(a.value) }}{% if a.basis and 'rough' in a.basis %} <span class="muted small">(rough)</span>{% endif %}{% else %}<span class="muted">no price data</span>{% endif %}</td>
+    <td class="small">{% if a.notes %}{{ a.notes.first }}{% if a.notes.points %}<br>{{ a.notes.points }}{% endif %}{% elif a.quick %}{{ a.quick[0] }}{% endif %}</td></tr>
+  {% endfor %}
+</table></div>
+{% else %}<p class="muted">No book on these shelves showed a sign of value.</p>{% endif %}
+{% else %}
+<h3 style="margin-top:1.25rem">{{ ph.pulls|length }} worth pulling</h3>
+{% if not ph.pulls %}<p class="muted">Nothing met the rules for this shelf category.</p>{% endif %}
+{% endif %}
+{% for x in ph.pulls %}{{ card(x, pi, 'pull') }}{% endfor %}
+
+{% if ph.leads %}
+<h3 style="margin-top:1.25rem">{{ ph.leads|length }} lesser-known lead{{ 's' if ph.leads|length != 1 }}</h3>
+<p class="small muted">Old books on a rare shelf with signs of a special copy (antique, illustrated, translated or small-press) but no matching sales in the price file, or a collected author's book whose title has no sales. Lower priority than the pulls; blue boxes on the photo.</p>
+{% for x in ph.leads %}{{ card(x, pi, 'lead') }}{% endfor %}
+{% endif %}
+
+{% if ph.not_pulled %}
+<h3 style="margin-top:1.25rem">Checked and not pulled ({{ ph.not_pulled|length }})</h3>
+<div class="scroll"><table class="wide">
+  <tr><th>Book</th><th>Where</th><th>Evidence</th><th>Why not</th>{% if feedback_url %}<th></th>{% endif %}</tr>
+  {% for x in ph.not_pulled %}
+  <tr><td>{{ x.label }}</td><td>Shelf {{ x.book.shelf }}, {{ ordinal(x.book.pos) }}</td><td class="small">{{ x.assessment.signals|join('; ') }}</td><td>{{ x.assessment.reason }}</td>
+    {% if feedback_url %}{% set key = pi ~ ':' ~ x.book.shelf ~ ':' ~ x.book.x0 %}{% set fb = (feedback.get(key) or {}).get('verdict') %}
+    <td class="fb" data-key="{{ key }}" data-label="{{ x.label }}" data-category="{{ x.category }}" data-value="{{ x.assessment.value or '' }}"><button type="button" class="fbb{{ ' on' if fb == 'should' }}" data-verdict="should">Should pull</button></td>{% endif %}</tr>
+  {% endfor %}
+</table></div>
+{% endif %}
+{% endfor %}
+
+<h2>About this scan</h2>
+<dl>
+  <dt>Claude cost</dt><dd>${{ '%.3f' % results.cost.spent }} for {{ results.cost.calls }} calls ({{ '{:,}'.format(results.cost.tokens.input) }} input and {{ '{:,}'.format(results.cost.tokens.output) }} output tokens); cap ${{ '%.2f' % results.cost.cap }}{% if results.cost.cached_calls %}; {{ results.cost.cached_calls }} saved responses reused{% endif %}</dd>
+  <dt>Time</dt><dd>{{ results.seconds }} seconds</dd>
+  <dt>Price file</dt><dd>{{ '{:,}'.format(results.version.prices.rows) }} sales, {{ results.version.prices.first_sale }} to {{ results.version.prices.last_sale }}: {% for f in results.version.prices.files %}{{ f.file }} ({{ f.sha256 }}){{ ', ' if not loop.last else '' }}{% endfor %}</dd>
+  <dt>Rules</dt><dd>{{ results.version.rules }}</dd>
+</dl>
+{% if results_url %}<p class="small"><a href="{{ results_url }}">Download the full results (JSON)</a>, including every spine as read.</p>{% endif %}
+<p class="small muted">The Terapeak link needs an eBay seller sign-in, and its search format hasn't been checked yet. Boxes come from the model's estimate of each spine's position, so one can sit a spine or two off.</p>
+{% endif %}
+{% if feedback_url and results %}
+<script>
+document.querySelectorAll('.fb').forEach(function (box) {
+  box.querySelectorAll('button').forEach(function (btn) {
+    btn.addEventListener('click', async function () {
+      var verdict = btn.classList.contains('on') ? '' : btn.dataset.verdict;
+      var body = {key: box.dataset.key, verdict: verdict, label: box.dataset.label, category: box.dataset.category, value: box.dataset.value};
+      try {
+        var r = await fetch({{ feedback_url|tojson }}, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
+        if (!r.ok) throw new Error(r.status);
+        box.querySelectorAll('button').forEach(function (b) { b.classList.remove('on'); });
+        if (verdict) btn.classList.add('on');
+      } catch (e) { alert('Could not save that. Check the connection and try again.'); }
+    });
+  });
+});
+</script>
+{% endif %}
+{% endblock %}

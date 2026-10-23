@@ -1,0 +1,246 @@
+{
+ "version": "plan-v4 with POC tuning (2026-10-23, round 4: check order on extremely rare and signed shelves, signed stickers)",
+ "minimum_value": {
+  "thrift": 50,
+  "cheap": 50,
+  "rare": 100,
+  "extreme": 100,
+  "signed": 100
+ },
+ "always_check_paperback_authors": [
+  "stephen king",
+  "richard bachman",
+  "tolkien",
+  "philip k\\.? dick"
+ ],
+ "paperback_whitelist": [
+  {
+   "author": "bachman|stephen king",
+   "title": "^rage$",
+   "publisher": "signet",
+   "edition": "Signet, 1977, first printing"
+  },
+  {
+   "author": "bachman|stephen king",
+   "title": "long walk",
+   "publisher": "signet",
+   "edition": "Signet, 1979, first printing"
+  },
+  {
+   "author": "bachman|stephen king",
+   "title": "roadwork",
+   "publisher": "signet",
+   "edition": "Signet, 1981, first printing"
+  },
+  {
+   "author": "bachman|stephen king",
+   "title": "running man",
+   "publisher": "signet",
+   "edition": "Signet, 1982, first printing"
+  },
+  {
+   "author": "tolkien",
+   "title": "hobbit",
+   "publisher": "ballantine",
+   "edition": "Ballantine, 1965, first printing"
+  },
+  {
+   "author": "tolkien",
+   "title": "lord of the rings|return of the king|two towers|fellowship",
+   "publisher": "ballantine",
+   "edition": "Ballantine, 1965, first printings"
+  },
+  {
+   "author": "tolkien",
+   "title": "fellowship",
+   "publisher": "\\bace\\b",
+   "edition": "Ace A-4, first printing"
+  },
+  {
+   "author": "asimov",
+   "title": "i,? robot",
+   "publisher": "signet",
+   "edition": "Signet, 1956, first printing (S1282)"
+  },
+  {
+   "author": "butler",
+   "title": "survivor",
+   "publisher": "signet",
+   "edition": "Signet, 1979, first printing"
+  },
+  {
+   "author": "ellison",
+   "title": "no mouth",
+   "publisher": "pyramid",
+   "edition": "Pyramid, 1967, first printing"
+  },
+  {
+   "author": "gibson",
+   "title": "neuromancer",
+   "publisher": "\\bace\\b",
+   "edition": "Ace, 1984, first printing"
+  },
+  {
+   "author": "herbert|mcnelly",
+   "title": "dune encyclopedia",
+   "publisher": "",
+   "edition": "1984, first trade paperback"
+  },
+  {
+   "author": "raspail",
+   "title": "camp of the saints",
+   "publisher": "\\bace\\b",
+   "edition": "Ace, 1977, first printing"
+  },
+  {
+   "author": "stephenson",
+   "title": "snow crash",
+   "publisher": "bantam",
+   "edition": "Bantam, 1992, trade paperback, first printing"
+  },
+  {
+   "author": "vonnegut",
+   "title": "sirens of titan",
+   "publisher": "dell",
+   "edition": "Dell, 1959, first printing"
+  },
+  {
+   "author": "bradbury",
+   "title": "fahrenheit",
+   "publisher": "ballantine",
+   "edition": "Ballantine, 1953, first printing"
+  },
+  {
+   "author": "",
+   "title": "",
+   "publisher": "penguin",
+   "look": "old",
+   "appearance": "green",
+   "exclude": "puffin|pelican|penguin classics|modern classics",
+   "edition": "Numbered Penguin crime firsts, 1939-1958 (green covers)",
+   "note": "Check the series number and the printing date"
+  },
+  {
+   "author": "hunter|mcbain",
+   "title": "evil sleep",
+   "publisher": "falcon",
+   "edition": "Falcon Books no. 41, 1952"
+  },
+  {
+   "author": "thompson",
+   "title": "criminal",
+   "publisher": "lion",
+   "edition": "Lion, 1953, paperback original"
+  },
+  {
+   "author": "grey",
+   "title": "hoods",
+   "publisher": "signet",
+   "edition": "Signet, 1953"
+  },
+  {
+   "author": "",
+   "title": "grinning gismo|too hot for hell",
+   "publisher": "\\bace\\b",
+   "edition": "Ace Double D-1, 1952"
+  },
+  {
+   "author": "keene",
+   "title": "hunt the killer|naked fury",
+   "publisher": "phantom",
+   "edition": "Phantom Books digests, 1951",
+   "note": "The SME isn't sure these are worth pulling"
+  },
+  {
+   "author": "burroughs",
+   "title": "naked lunch",
+   "publisher": "olympia",
+   "edition": "Olympia Press, Paris, 1959"
+  },
+  {
+   "author": "burroughs|william lee",
+   "title": "junkie",
+   "publisher": "\\bace\\b",
+   "edition": "Ace, 1953, first printing"
+  },
+  {
+   "author": "cohen",
+   "title": "netanyahus",
+   "publisher": "new york review|nyrb",
+   "edition": "New York Review Books, 2021, first printing"
+  },
+  {
+   "author": "pynchon",
+   "title": "gravity",
+   "publisher": "viking",
+   "edition": "Viking, 1973, softcover, first printing"
+  },
+  {
+   "author": "orwell",
+   "title": "^1984$|nineteen eighty",
+   "publisher": "signet",
+   "edition": "Signet, 1950, first printing"
+  },
+  {
+   "author": "fitzgerald",
+   "title": "great gatsby",
+   "publisher": "bantam",
+   "edition": "Bantam, 1945, first Bantam printing"
+  },
+  {
+   "author": "kerouac",
+   "title": "on the road",
+   "publisher": "signet",
+   "edition": "Signet, 1958, first printing"
+  },
+  {
+   "author": "rowling",
+   "title": "philosopher",
+   "publisher": "bloomsbury",
+   "edition": "Bloomsbury paperback, early printings"
+  },
+  {
+   "author": "richards",
+   "title": "halloween",
+   "publisher": "bantam",
+   "edition": "Bantam, 1979, first printing"
+  },
+  {
+   "author": "brittle",
+   "title": "devil in connecticut",
+   "publisher": "bantam",
+   "edition": "Bantam, 1983, first printing"
+  },
+  {
+   "author": "winogrand",
+   "title": "women are beautiful",
+   "publisher": "",
+   "edition": "1975 first edition, softcover"
+  },
+  {
+   "author": "lyon",
+   "title": "bikeriders",
+   "publisher": "macmillan",
+   "edition": "Macmillan, 1968, softcover, first printing"
+  },
+  {
+   "author": "avedon|baldwin",
+   "title": "nothing personal",
+   "publisher": "dell",
+   "edition": "Dell, 1965, first printing"
+  },
+  {
+   "author": "fleming",
+   "title": "from russia",
+   "publisher": "\\bpan\\b",
+   "edition": "Pan, 1959, first paperback edition"
+  }
+ ],
+ "book_club_sure": "book club edition|nelson doubleday|\\bbce\\b|readers'? union|literary guild|book[- ]of[- ]the[- ]month|\\bbomc\\b|reprint society|companion book club|science fiction book club|\\bsfbc\\b|doubleday book club|world books",
+ "book_club_possible": "book ?club",
+ "reprint_publishers": "\\bcalla\\b|\\bdover\\b|ams press|facsimile|barnes (&|and) noble|canterbury classics|fall river|wordsworth|signet classics?|penguin classics|bantam classics?|reader'?s digest|everyman'?s library|\\btor classics\\b|british library",
+ "collectible_imprints": "folio society|\\bfolio\\b|easton|franklin library|heritage press|limited editions club|arkham|donald m\\.? grant|gnome press|subterranean|suntup|centipede|lettered|golden cockerel|nonesuch|grabhorn|kelmscott|doves press|cuala|black sun|curwen|navarre society|essex house|vale press|eragny|ashendene|gregynog|cranach press|rampant lions|privately printed",
+ "collectible_marks": "\\bsigned\\b|limited|numbered|\\bslipcase|first edition|1st edition|first printing|lettered|inscribed",
+ "false_friend_authors": "dickens|mark twain|\\btwain\\b|walter scott|longfellow|hawthorne|kipling|zane grey|edgar rice burroughs|darwin|shakespeare|\\bbible\\b|holy bible|alger|henty|stratemeyer",
+ "illustrators": "rockwell kent|rackham|gorey|lynd ward|sendak|beatrix potter|dulac|parrish|kay nielsen|howard pyle|wyeth|jessie willcox smith|pogany|harry clarke|heath robinson|charles robinson|greenaway|walter crane|denslow|john r\\.? neill|tenniel|shepard|garth williams|tasha tudor|jessie m\\.? king|hugh thomson|remington|gruelle|virginia lee burton|robert lawson|wanda g[aá]g|louis rhead|john austen|covarrubias|tom lea|frazetta|\\bdor[eé]\\b|beardsley|bewick|rex whistler|mabel lucie attwell|attwell"
+}

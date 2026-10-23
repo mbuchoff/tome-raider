@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}Shelf Scanner{% endblock %}</title>
+{% block head %}{% endblock %}
+<style>
+:root { --bg: #fafaf7; --fg: #1d1d1b; --muted: #6b6a64; --card: #ffffff; --line: #e3e1da; --accent: #b3261e; --accent-fg: #fff; --ok: #2e6b3a; --warn: #8a5a00; }
+@media (prefers-color-scheme: dark) { :root { --bg: #161614; --fg: #ecebe6; --muted: #a3a29b; --card: #21211e; --line: #393833; --accent: #e5534b; --accent-fg: #fff; --ok: #7cc48a; --warn: #e0b04f; } }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+main { max-width: 980px; margin: 0 auto; padding: 16px; }
+header.top { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--line); }
+header.top a { color: inherit; text-decoration: none; font-weight: 700; }
+a { color: var(--accent); }
+h1 { font-size: 1.5rem; margin: 0.5rem 0 1rem; }
+.titlebar { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 1rem; }
+.titlebar h1 { margin-bottom: 0; }
+.credit { text-align: right; flex: none; } .credit strong { font-size: 1.15rem; }
+h2 { font-size: 1.2rem; margin: 2rem 0 0.75rem; }
+h3 { font-size: 1.05rem; margin: 0; }
+.muted { color: var(--muted); }
+.small { font-size: 0.875rem; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px; margin: 0 0 12px; }
+label { display: block; font-weight: 600; margin: 14px 0 4px; }
+input[type=text], input[type=password], input[type=number], select { width: 100%; padding: 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--fg); font: inherit; }
+input[type=file] { width: 100%; padding: 10px 0; }
+.check { display: flex; gap: 8px; align-items: flex-start; font-weight: 400; }
+button, .button { display: inline-block; background: var(--accent); color: var(--accent-fg); border: 0; border-radius: 8px; padding: 11px 18px; font: inherit; font-weight: 600; cursor: pointer; text-decoration: none; }
+button.secondary { background: transparent; color: var(--accent); border: 1px solid var(--accent); }
+table { width: 100%; border-collapse: collapse; font-size: 0.925rem; }
+th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+img.photo { width: 100%; height: auto; border-radius: 8px; border: 1px solid var(--line); }
+.pull { display: grid; grid-template-columns: 140px 1fr; gap: 14px; }
+.pull img { width: 140px; height: auto; border-radius: 6px; border: 1px solid var(--line); }
+.badge { display: inline-block; min-width: 1.8em; text-align: center; background: #e01e1e; color: #fff; border-radius: 6px; padding: 0 6px; font-weight: 700; margin-right: 6px; }
+.badge.lead { background: #1e5be0; }
+.badge.unread { background: #ffb000; color: #000; }
+.legend > span { white-space: nowrap; margin-right: 12px; }
+.copy { display: flex; gap: 10px; align-items: flex-start; margin-top: 6px; }
+.pull .copy img { width: 70px; }
+.status { font-weight: 700; }
+.status.done { color: var(--ok); } .status.failed, .status.stopped { color: var(--accent); } .status.running, .status.queued { color: var(--warn); }
+dl { display: grid; grid-template-columns: max-content 1fr; gap: 2px 12px; margin: 8px 0 0; font-size: 0.925rem; }
+dt { color: var(--muted); } dd { margin: 0; }
+.links a { margin-right: 12px; white-space: nowrap; }
+.scroll { overflow-x: auto; }
+.fbb { background: transparent; color: var(--fg); border: 1px solid var(--line); padding: 6px 12px; font-weight: 500; margin-right: 6px; }
+.fbb.on[data-verdict=worth] { background: var(--ok); border-color: var(--ok); color: #fff; }
+.fbb.on[data-verdict=not], .fbb.on[data-verdict=should] { background: var(--accent); border-color: var(--accent); color: #fff; }
+details summary { cursor: pointer; }
+.error { color: var(--accent); font-weight: 600; }
+@media (max-width: 560px) { .pull { grid-template-columns: 1fr; } .pull img { width: auto; max-width: 100%; max-height: 220px; } table.wide th:nth-child(3), table.wide td:nth-child(3) { display: none; } }
+</style>
+</head>
+<body>
+<header class="top"><a href="{{ url_for('index') if url_for is defined else '#' }}">Shelf Scanner</a><span class="muted small">proof of concept</span></header>
+<main>{% block body %}{% endblock %}</main>
+</body>
+</html>

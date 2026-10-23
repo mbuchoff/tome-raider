@@ -1,0 +1,70 @@
+{% extends 'base.html' %}
+{% block body %}
+<div class="titlebar"><h1>Scan a shelf</h1>
+  {% if credit and credit.amount is not none %}<div class="credit" title="Credit left on the Anthropic account"><strong>${{ '%.2f' % credit.amount }}</strong> left
+    <div class="small muted">Claude credit · {{ credit.as_of[11:16] }} UTC</div>{% if credit.error %}<div class="small muted">{{ credit.error }}</div>{% endif %}</div>
+  {% else %}<div class="credit small muted">Credit left: not shown ({{ credit.error if credit else 'unavailable' }})</div>{% endif %}
+</div>
+<details class="card"><summary><strong>How to use it</strong></summary>
+  <ul class="small">
+    <li>Stand square to the shelf and take the photo at full resolution, about 15–30 spines across. Several photos of the same section can go in one scan.</li>
+    <li>Pick the shelf category first: it sets how strict the rules are and the minimum value ($50 on thrift and cheap shelves, $100 on rare ones). Extremely rare and signed shelves have no minimum: they list every book with a sign of value in check order, likeliest value first, and look for signed stickers. If one photo mixes shelves, say so below, counting shelves from the top.</li>
+    <li>A pull means "worth a look", not "valuable". The <em>Check</em> line on each card says what to confirm in hand; the spine crop is the surest way to find it.</li>
+    <li>Please mark each pull <em>Worth it</em> or <em>Not worth it</em>, and mark <em>Should pull</em> on any book in the "not pulled" list that was a find. That's how the rules get tuned.</li>
+    <li>After about 20 idle minutes the app sleeps, and the first page takes 30–60 seconds to wake it.</li>
+  </ul>
+</details>
+<form method="post" action="{{ url_for('create_job') }}" enctype="multipart/form-data" class="card">
+  <label for="photos">Photos</label>
+  <input type="file" id="photos" name="photos" accept="image/*" multiple required>
+  <p class="small muted">Full resolution, straight on, about 15–30 spines across. All photos in one scan share the settings below.</p>
+
+  <label for="category">Shelf category</label>
+  <select id="category" name="category">
+    {% for key, name in categories.items() %}<option value="{{ key }}"{% if key == 'cheap' %} selected{% endif %}>{{ name }} — {{ descriptions[key] }}</option>{% endfor %}
+  </select>
+
+  <label for="overrides">Different shelves in the photo (optional)</label>
+  <input type="text" id="overrides" name="overrides" placeholder="e.g. 3=signed or 1-2=rare">
+  <p class="small muted">Shelves are counted from the top. Categories: thrift, cheap, rare, extreme, signed.</p>
+
+  <label for="minimum">Minimum value to flag, $ (optional)</label>
+  <input type="number" id="minimum" name="minimum" min="1" step="1" placeholder="default: 50 or 100, by category; not used on extremely rare or signed shelves">
+
+  <label for="note">Note (optional)</label>
+  <input type="text" id="note" name="note" maxlength="300" placeholder="e.g. sci-fi section, $3 hardcovers, all first editions">
+
+  <label class="check"><input type="checkbox" name="second_read" value="1" checked>
+    <span>Second read on rare, extremely rare and signed shelves, looking for flat and hidden books <span class="muted small">(Opus; roughly doubles the cost of those shelves)</span></span></label>
+
+  <p><button type="submit">Scan</button></p>
+  <p class="small muted">Each scan stops before it could spend more than ${{ '%.2f' % job_cap }} on Claude. Today: ${{ '%.2f' % spent_today }} of the ${{ '%.2f' % daily_cap }} daily limit.</p>
+</form>
+<details class="card small"{% if credit_error %} open{% endif %}><summary>Update the credit balance</summary>
+  {% if credit_error %}<p class="error">{{ credit_error }}</p>{% endif %}
+  <form method="post" action="{{ url_for('set_credit') }}">
+    <label for="balance">Balance in the Claude Console, $</label>
+    <input type="number" id="balance" name="balance" min="0" max="100000" step="0.01" required>
+    <p class="small muted">Copy it from the Console's Billing page. Enter it again after adding credits or an auto-reload: the app subtracts everything the account spends from then on: its own scans at once, other use of the account after about an hour.{% if credit and credit.set_at %} Last entered {{ credit.set_at[:16].replace('T', ' ') }} UTC.{% endif %}</p>
+    <p><button class="secondary" type="submit">Save the balance</button></p>
+  </form>
+</details>
+
+<h2>Recent scans</h2>
+{% if jobs %}
+<div class="scroll"><table>
+  <tr><th>When</th><th>Photos</th><th>Category</th><th>Status</th><th>Pulls</th><th>Marked</th><th>Cost</th></tr>
+  {% for j in jobs %}
+  <tr>
+    <td><a href="{{ url_for('job_page', job_id=j.id) }}">{{ j.created[:16].replace('T', ' ') }}</a></td>
+    <td>{{ j.photos|length }}</td>
+    <td>{{ categories[j.photos[0].category] if j.photos else '' }}</td>
+    <td class="status {{ j.status }}">{{ j.status }}</td>
+    <td>{{ j.get('pulls', '') }}{% if j.get('leads') %} + {{ j.leads }} lead{{ 's' if j.leads != 1 }}{% endif %}</td>
+    <td>{{ j.marked or '' }}</td>
+    <td>{% if j.cost %}${{ '%.2f' % j.cost.spent }}{% endif %}</td>
+  </tr>
+  {% endfor %}
+</table></div>
+{% else %}<p class="muted">No scans yet.</p>{% endif %}
+{% endblock %}
