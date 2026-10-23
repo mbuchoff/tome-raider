@@ -1,0 +1,52 @@
+{% extends 'base.html' %}
+{% block title %}Runs against marks · Shelf Scanner{% endblock %}
+{% block body %}
+{% set t = summary.totals %}
+<h1>Runs against marks</h1>
+<p class="small muted">Each marked capture's latest run, and the run its marks were set on, scored against the marks.
+  A "Worth it" or "Should pull" mark agrees when the run pulls the book or lists it as a lead; a "Not worth it" mark agrees when it doesn't.
+  "Not found" means the run didn't read that book; "unanswered" counts the run's pulls and leads that nobody has marked.</p>
+
+{% if not summary.captures %}
+<p class="muted">No capture has marks yet. Mark pulls "Worth it" or "Not worth it", and "Should pull" on books that weren't pulled, on a capture's page.</p>
+{% else %}
+<div class="card">
+  <p><strong>Latest runs:</strong> {{ t.latest.agree }} agree, {{ t.latest.disagree }} disagree, {{ t.latest['not found'] }} not found, {{ t.latest.unanswered }} unanswered.
+    <br><strong>Runs the marks were set on:</strong> {{ t.marked_on.agree }} agree, {{ t.marked_on.disagree }} disagree, {{ t.marked_on['not found'] }} not found, {{ t.marked_on.unanswered }} unanswered.</p>
+  {% if can_rerun %}
+  <form method="post" action="{{ url_for('marks.rerun_marked') }}"><button class="secondary" type="submit">Re-run every marked capture with the current baseline</button>
+    <span class="muted small">Saved responses are reused, so only reading that changed is paid for.</span></form>
+  {% endif %}
+</div>
+
+<div class="scroll"><table>
+  <tr><th>Capture</th><th>Marks</th><th>Run</th><th>Baseline</th><th>Agree</th><th>Disagree</th><th>Not found</th><th>Unanswered</th></tr>
+  {% for c in summary.captures %}
+  {% for r in c.runs %}
+  <tr>
+    {% if loop.first %}<td rowspan="{{ c.runs|length }}"><a href="/captures/{{ c.id }}">{{ c.created[:16].replace('T', ' ') or c.id }}</a>
+      <div class="small muted">{{ c.photos }} photo{{ 's' if c.photos != 1 }}</div></td>
+    <td rowspan="{{ c.runs|length }}">{{ c.marks }}<div class="small muted">{{ c.verdicts.worth }} worth, {{ c.verdicts['not'] }} not, {{ c.verdicts.should }} should</div></td>{% endif %}
+    <td><a href="/captures/{{ c.id }}?run={{ r.run }}">{{ r.roles|join(', ') }}</a><div class="small muted">{{ r.run[:15] }}</div></td>
+    <td class="small">{{ r.baseline_label }}</td>
+    <td>{{ r.agree }}</td><td>{{ r.disagree }}</td><td>{{ r['not found'] }}</td><td>{{ r.unanswered }}</td>
+  </tr>
+  {% else %}
+  <tr><td><a href="/captures/{{ c.id }}">{{ c.created[:16].replace('T', ' ') or c.id }}</a></td><td>{{ c.marks }}</td><td colspan="6" class="muted">no finished run</td></tr>
+  {% endfor %}
+  {% endfor %}
+</table></div>
+
+{% for c in summary.captures if c.runs %}
+<details class="card small"><summary>{{ c.created[:16].replace('T', ' ') or c.id }}: each mark</summary>
+  <table>
+    <tr><th>Book</th><th>Mark</th>{% for r in c.runs %}<th>{{ r.roles|join(', ') }}</th>{% endfor %}</tr>
+    {% for o in c.runs[0].outcomes %}
+    <tr><td>{{ o.label }}</td><td>{{ {'worth': 'Worth it', 'not': 'Not worth it', 'should': 'Should pull'}[o.verdict] }}</td>
+      {% for r in c.runs %}{% set x = r.outcomes|selectattr('id', 'equalto', o.id)|first %}<td>{{ x.outcome }}{% if x.status %} <span class="muted">({{ x.status|replace('_', ' ') }})</span>{% endif %}</td>{% endfor %}</tr>
+    {% endfor %}
+  </table>
+</details>
+{% endfor %}
+{% endif %}
+{% endblock %}

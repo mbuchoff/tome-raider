@@ -1,33 +1,53 @@
-{# Mark controls for the capture page. Placeholder with today's buttons; the marks work replaces the insides, keeping the
-   macro names and arguments. book_key is 'photo:shelf:x0' for the run shown; item is a pull, lead or not-pulled entry;
-   mark is the matched mark or None; kind is 'pull' (Worth it / Not worth it) or 'not_pulled' (Should pull). #}
+{# Mark controls for the capture page. book_key is 'photo:shelf:x0' for the run shown; item is a pull, lead or not-pulled
+   entry; mark is the matched mark or None; kind is 'pull' (Worth it / Not worth it) or 'not_pulled' (Should pull). A book
+   is unanswered until marked; once marked, the pressed button stays on and "Clear" makes it unanswered again. The run
+   shown is read from the closest element with data-run. #}
 {% macro mark_buttons(book_key, item, mark, kind) %}
 {% set v = (mark or {}).get('verdict') %}
-<p class="fb" data-key="{{ book_key }}" data-label="{{ item.label }}" data-category="{{ item.category }}" data-value="{{ item.assessment.value or '' }}">
+<span class="fb" data-key="{{ book_key }}">
   {% if kind == 'pull' %}
-  <button type="button" class="fbb{{ ' on' if v == 'worth' }}" data-verdict="worth">Worth it</button>
-  <button type="button" class="fbb{{ ' on' if v == 'not' }}" data-verdict="not">Not worth it</button>
+  <button type="button" class="fbb{{ ' on' if v == 'worth' }}" data-verdict="worth" aria-pressed="{{ 'true' if v == 'worth' else 'false' }}">Worth it</button>
+  <button type="button" class="fbb{{ ' on' if v == 'not' }}" data-verdict="not" aria-pressed="{{ 'true' if v == 'not' else 'false' }}">Not worth it</button>
   {% else %}
-  <button type="button" class="fbb{{ ' on' if v == 'should' }}" data-verdict="should">Should pull</button>
+  <button type="button" class="fbb{{ ' on' if v == 'should' }}" data-verdict="should" aria-pressed="{{ 'true' if v == 'should' else 'false' }}">Should pull</button>
   {% endif %}
-</p>
+  <span class="fb-state"{% if v %} hidden{% endif %}>Unanswered</span>
+  <button type="button" class="fb-clear"{% if not v %} hidden{% endif %}>Clear</button>
+</span>
 {% endmacro %}
 
 {% macro marks_script(marks_url) %}
+<style>
+.fb { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.fb .fbb { margin-right: 0; }
+.fb .fb-state { color: var(--muted); font-size: 0.875rem; }
+.fb .fb-clear { background: transparent; color: var(--muted); border: 0; padding: 4px 6px; font-weight: 400; font-size: 0.875rem; text-decoration: underline; }
+.fb [hidden] { display: none !important; }
+</style>
 <script>
 document.querySelectorAll('.fb').forEach(function (box) {
-  box.querySelectorAll('button').forEach(function (btn) {
-    btn.addEventListener('click', async function () {
-      var verdict = btn.classList.contains('on') ? '' : btn.dataset.verdict;
-      var body = {key: box.dataset.key, verdict: verdict, label: box.dataset.label, category: box.dataset.category, value: box.dataset.value};
-      try {
-        var r = await fetch({{ marks_url|tojson }}, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
-        if (!r.ok) throw new Error(r.status);
-        box.querySelectorAll('button').forEach(function (b) { b.classList.remove('on'); });
-        if (verdict) btn.classList.add('on');
-      } catch (e) { alert('Could not save that. Check the connection and try again.'); }
+  function show(verdict) {
+    box.querySelectorAll('.fbb').forEach(function (b) {
+      var on = b.dataset.verdict === verdict;
+      b.classList.toggle('on', on);
+      b.setAttribute('aria-pressed', on ? 'true' : 'false');
     });
+    box.querySelector('.fb-state').hidden = !!verdict;
+    box.querySelector('.fb-clear').hidden = !verdict;
+  }
+  async function save(verdict) {
+    var run = box.closest('[data-run]');
+    var body = {run_id: run ? run.dataset.run : '', key: box.dataset.key, verdict: verdict};
+    try {
+      var r = await fetch({{ marks_url|tojson }}, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
+      if (!r.ok) throw new Error(r.status);
+      show((await r.json()).verdict || '');
+    } catch (e) { alert('Could not save that. Check the connection and try again.'); }
+  }
+  box.querySelectorAll('.fbb').forEach(function (btn) {
+    btn.addEventListener('click', function () { if (!btn.classList.contains('on')) save(btn.dataset.verdict); });
   });
+  box.querySelector('.fb-clear').addEventListener('click', function () { save(''); });
 });
 </script>
 {% endmacro %}
