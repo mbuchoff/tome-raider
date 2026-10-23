@@ -42,7 +42,7 @@
   <table>
     <tr><th>Book</th><th>Mark</th>{% for r in c.runs %}<th>{{ r.roles|join(', ') }}</th>{% endfor %}</tr>
     {% for o in c.runs[0].outcomes %}
-    <tr><td>{{ o.label }}</td><td>{{ {'worth': 'Worth it', 'not': 'Not worth it', 'should': 'Should pull'}[o.verdict] }}</td>
+    <tr><td>{{ o.label }}</td><td>{{ {'worth': 'Worth it', 'not': 'Not worth it', 'should': 'Should pull'}[o.verdict] }}{% if o.note %}<div class="small muted">{{ o.note }}</div>{% endif %}</td>
       {% for r in c.runs %}{% set x = r.outcomes|selectattr('id', 'equalto', o.id)|first %}<td>{{ x.outcome }}{% if x.status %} <span class="muted">({{ x.status|replace('_', ' ') }})</span>{% endif %}</td>{% endfor %}</tr>
     {% endfor %}
   </table>

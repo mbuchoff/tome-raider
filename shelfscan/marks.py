@@ -9,6 +9,7 @@ from .store import Conflict, NotFound
 
 VERDICTS = ('worth', 'not', 'should')
 RETRIES = 8
+KEEP = object()                     # set_mark: leave the verdict or note as it is
 
 
 def book_key(photo, b):
@@ -96,32 +97,38 @@ def for_run(store, cid, results, marks=None):
     return out
 
 
-def set_mark(store, cid, run_id, key, verdict, results, now=None):
-    """Sets the verdict on the book with this key in this run's results, or clears its mark when verdict is '' or None.
-    Raises ValueError for an unknown verdict and KeyError for a key the run doesn't have. Returns dict(verdict, id, marked)."""
-    verdict = verdict or ''
-    if verdict and verdict not in VERDICTS: raise ValueError(verdict)
+def set_mark(store, cid, run_id, key, verdict, results, now=None, note=KEEP):
+    """Sets the verdict on the book with this key in this run's results ('' or None clears it: unanswered; KEEP leaves it),
+    and its optional note (KEEP leaves it; '' removes it). A book with a note but no verdict keeps a mark that only holds
+    the note; it counts as unanswered. Raises ValueError for an unknown verdict and KeyError for a key the run doesn't
+    have. Returns dict(verdict, note, id, marked)."""
+    if verdict is not KEEP:
+        verdict = verdict or ''
+        if verdict and verdict not in VERDICTS: raise ValueError(verdict)
     target = next((b for b in books(results) if b['key'] == key), None)
     if target is None: raise KeyError(key)
     b, item = target['book'], target['item'] or {}
     for _ in range(RETRIES):
         marks, etag = load(store, cid)
         mid = next(iter(match(marks, [target])), None)          # the mark already on this book, if any
-        if verdict:
+        cur = marks.get(mid) or {}
+        v = cur.get('verdict', '') if verdict is KEEP else verdict
+        n = cur.get('note', '') if note is KEEP else str(note or '').strip()[:500]
+        if v or n:
             mid = mid or secrets.token_hex(6)
-            marks[mid] = {'verdict': verdict, 'label': item.get('label') or (b.get('title') or ''), 'category': item.get('category', ''),
+            marks[mid] = {'verdict': v, 'note': n, 'label': item.get('label') or (b.get('title') or ''), 'category': item.get('category', ''),
                           'value': (item.get('assessment') or {}).get('value'), 'run_id': run_id,
                           'at': (now or datetime.datetime.now(datetime.timezone.utc)).isoformat(timespec='seconds'),
                           'book': {'photo': target['photo'], 'shelf': b['shelf'], 'x0': b['x0'], 'x1': b['x1'], 'y0': b.get('y0'),
                                    'y1': b.get('y1'), 'title': b.get('title') or '', 'author': b.get('author') or ''}}
         elif mid: del marks[mid]
-        else: return dict(verdict='', id=None, marked=len(marks))
+        else: return dict(verdict='', note='', id=None, marked=sum(1 for m in marks.values() if m.get('verdict')))
         try:
             if etag is None: store.put_json(repo.marks_key(cid), marks, if_none_match=True)
             else: store.put_json(repo.marks_key(cid), marks, if_match=etag)
         except Conflict: continue
         index.update_entry(store, cid)
-        return dict(verdict=verdict, id=mid if verdict else None, marked=len(marks))
+        return dict(verdict=v, note=n, id=mid if (v or n) else None, marked=sum(1 for m in marks.values() if m.get('verdict')))
     raise Conflict(repo.marks_key(cid))
 
 

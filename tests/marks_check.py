@@ -71,7 +71,17 @@ r = marks.set_mark(store, CID, RUN_A, key_a(p0), 'not', run_a)
 check('change to not keeps the mark', (r['verdict'], r['id'], r['marked']), ('not', mid, 1))
 check('should on a not-pulled book', marks.set_mark(store, CID, RUN_A, key_a(np_book), 'should', run_a)['marked'], 2)
 marks.set_mark(store, CID, RUN_A, key_a(p1), 'worth', run_a)
-check('clear (unanswer)', marks.set_mark(store, CID, RUN_A, key_a(p1), '', run_a), {'verdict': '', 'id': None, 'marked': 2})
+check('clear (unanswer)', marks.set_mark(store, CID, RUN_A, key_a(p1), '', run_a), {'verdict': '', 'note': '', 'id': None, 'marked': 2})
+# notes: a note alone keeps a mark that counts as unanswered; a verdict set later keeps the note; clearing the verdict keeps it
+r = marks.set_mark(store, CID, RUN_A, key_a(p1), marks.KEEP, run_a, note=' first edition? check the jacket ')
+check('note on an unanswered book', (r['verdict'], r['note'], r['marked']), ('', 'first edition? check the jacket', 2))
+r = marks.set_mark(store, CID, RUN_A, key_a(p1), 'worth', run_a)
+check('verdict keeps the note', (r['verdict'], r['note'], r['marked']), ('worth', 'first edition? check the jacket', 3))
+r = marks.set_mark(store, CID, RUN_A, key_a(p1), '', run_a)
+check('clearing the verdict keeps the note', (r['verdict'], r['note'], r['marked']), ('', 'first edition? check the jacket', 2))
+check('a note-only mark is not scored', r['id'] in [o['id'] for o in evaluate.score(run_a, marks.load(store, CID)[0])['outcomes']], False)
+r = marks.set_mark(store, CID, RUN_A, key_a(p1), marks.KEEP, run_a, note='')
+check('removing the note removes the mark', (r['id'], r['marked']), (None, 2))
 check('clearing an unanswered book changes nothing', marks.set_mark(store, CID, RUN_A, key_a(p1), None, run_a)['marked'], 2)
 marks.set_mark(store, CID, RUN_A, key_a(p4), 'worth', run_a)
 saved, _ = marks.load(store, CID)
@@ -98,7 +108,7 @@ check('score run B', {k: sb[k] for k in ('agree', 'disagree', 'not found', 'unan
 s = evaluate.summary(store)
 c = s['captures'][0]
 check('summary: latest and marked-on runs', [(r['run'], r['roles'], r['baseline_label']) for r in c['runs']],
-      [(RUN_B, ['latest'], '0dec24c (2026-10-23)'), (RUN_A, ['marked on'], 'before git')])
+      [(RUN_B, ['latest'], 'code of 2026-10-23 20:33 UTC'), (RUN_A, ['marked on'], 'before git')])
 check('summary totals', (s['totals']['latest']['agree'], s['totals']['marked_on']['disagree']), (1, 2))
 
 

@@ -54,7 +54,7 @@ check('no balance', credit.remaining(home, KEY, fake, now)['error'], 'no balance
 
 events.append((T0 - datetime.timedelta(minutes=5), 'claude-sonnet-5-5', 10**6, 0))          # $2 before the balance is entered: not subtracted
 state = credit.set_balance(home, KEY, '50', fake, now)
-check('balance saved', state, {'balance': 50.0, 'set_at': '2026-10-22T15:30:20+00:00'})
+check('balance saved', state, {'balance': 50.0, 'set_at': '2026-10-22T15:30:20+00:00', 'note': ''})
 check('key checked with one minute', calls[-1], ('1m', '10-22T15:30', '10-22T15:31', None))
 check('nothing spent since', (credit.remaining(home, KEY, fake, now)['amount'], credit.remaining(home, KEY, fake, now)['error']), (50.0, None))
 

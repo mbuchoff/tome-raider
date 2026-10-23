@@ -2,7 +2,7 @@
 
 A "Worth it" or "Should pull" mark agrees when the run pulls the book or lists it as a lead; a "Not worth it" mark agrees
 when the run doesn't. Unanswered books don't count, but the pulls and leads nobody has marked are reported."""
-from . import marks as marks_mod, repo
+from . import marks as marks_mod, version, repo
 from .store import NotFound
 
 OUTCOMES = ('agree', 'disagree', 'not found')
@@ -10,6 +10,7 @@ OUTCOMES = ('agree', 'disagree', 'not found')
 
 def score(results, marks):
     """dict(agree, disagree, not found, unanswered, outcomes): outcomes has one row per answered mark."""
+    marks = {k: m for k, m in marks.items() if m.get('verdict')}            # a mark holding only a note is unanswered
     bs = marks_mod.books(results)
     by_key = {b['key']: b for b in bs}
     matched = marks_mod.match(marks, bs)
@@ -18,7 +19,7 @@ def score(results, marks):
         b = by_key.get(matched.get(mid))
         if b is None: outcome = 'not found'
         else: outcome = 'agree' if (b['status'] in ('pull', 'lead')) == (m['verdict'] in ('worth', 'should')) else 'disagree'
-        rows.append(dict(id=mid, verdict=m['verdict'], label=m.get('label', ''), outcome=outcome, status=b['status'] if b else None,
+        rows.append(dict(id=mid, verdict=m['verdict'], note=m.get('note', ''), label=m.get('label', ''), outcome=outcome, status=b['status'] if b else None,
                          key=b['key'] if b else None))
     groups = {by_key[k]['group'] for k in matched.values()}
     unanswered = len({b['group'] for b in bs if b['status'] in ('pull', 'lead')} - groups)
@@ -32,9 +33,9 @@ def _get(store, key):
 
 
 def baseline_label(b):
-    """'0dec24c (2026-10-23)' or 'before git'."""
+    """'code of 2026-10-23 21:09 UTC' or 'before git'."""
     if not b or not b.get('sha'): return 'before git'
-    return b['sha'][:7] + (f" ({b['committed_at'][:10]})" if b.get('committed_at') else '') + (' + changes' if b.get('dirty') else '')
+    return f'code of {version.commit_time(b)}' + (' + changes' if b.get('dirty') else '')
 
 
 def summary(store):
@@ -43,6 +44,7 @@ def summary(store):
     out, totals = [], {'latest': dict.fromkeys(OUTCOMES + ('unanswered',), 0), 'marked_on': dict.fromkeys(OUTCOMES + ('unanswered',), 0)}
     for cid in marks_mod.capture_ids(store):
         marks, _ = marks_mod.load(store, cid)
+        marks = {k: m for k, m in marks.items() if m.get('verdict')}        # note-only marks aren't answers
         if not marks: continue
         capture = _get(store, repo.capture_key(cid)) or {}
         runs = []

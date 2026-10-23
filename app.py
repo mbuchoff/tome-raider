@@ -46,7 +46,7 @@ def ordinal(n):
     return f"{n}{'th' if 10 <= n % 100 <= 20 else {1: 'st', 2: 'nd', 3: 'rd'}.get(n % 10, 'th')}"
 
 
-app.jinja_env.globals.update(ordinal=ordinal, categories=CATEGORIES)
+app.jinja_env.globals.update(ordinal=ordinal, categories=CATEGORIES, commit_time=version.commit_time)
 
 
 def queue_run(cid):
@@ -161,7 +161,7 @@ def set_credit():
         if not 0 <= balance <= 100000: raise ValueError
     except ValueError:
         return index('Enter the balance in dollars, for example 37.50.'), 400
-    try: credit.set_balance(HOME, ADMIN_KEY, balance)
+    try: credit.set_balance(HOME, ADMIN_KEY, balance, note=request.form.get('note', ''))
     except Exception as e: return index(f"The balance wasn't saved, because the account's spending couldn't be read: {e}"), 502
     return redirect(url_for('index'))
 

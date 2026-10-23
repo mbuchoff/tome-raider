@@ -88,12 +88,12 @@ def ledger_spent(home, since):
     return total
 
 
-def set_balance(home, admin_key, balance, get=_get, clock=time.time):
+def set_balance(home, admin_key, balance, get=_get, clock=time.time, note=''):
     """Records the Console balance now; spending from this minute on is subtracted. Reads the last minute once to check the key."""
     if not admin_key: raise RuntimeError('no Admin API key is set')
     now = datetime.datetime.fromtimestamp(clock(), datetime.timezone.utc)
     account_spent(admin_key, now, now, get)
-    state = {'balance': round(float(balance), 2), 'set_at': now.isoformat(timespec='seconds')}
+    state = {'balance': round(float(balance), 2), 'set_at': now.isoformat(timespec='seconds'), 'note': str(note or '').strip()[:300]}
     tmp = _path(home) + f'.{os.getpid()}.{threading.get_ident()}.tmp'
     json.dump(state, open(tmp, 'w'), indent=1)
     os.replace(tmp, _path(home))
@@ -117,10 +117,10 @@ def remaining(home, admin_key, get=_get, clock=time.time):
             cutoff = max(since, _minute(now - LAG))         # the usage report up to here; the app's ledger after it
             spent, unpriced = account_spent(admin_key, since, cutoff - MINUTE, get) if cutoff > since else (0.0, set())
             spent += ledger_spent(home, cutoff)
-            result = dict(amount=round(state['balance'] - spent, 2), as_of=now.isoformat(timespec='seconds'), set_at=state['set_at'],
+            result = dict(amount=round(state['balance'] - spent, 2), as_of=now.isoformat(timespec='seconds'), set_at=state['set_at'], note=state.get('note', ''),
                           error=f"usage of {', '.join(sorted(unpriced))} isn't counted, because the app has no price for it" if unpriced else None)
         except Exception as e:
             last = c['result'] if c and c['state'] == state else {}
-            result = dict(amount=last.get('amount'), as_of=last.get('as_of'), set_at=state['set_at'], error=str(e)[:200])
+            result = dict(amount=last.get('amount'), as_of=last.get('as_of'), set_at=state['set_at'], note=state.get('note', ''), error=str(e)[:200])
         _cache[home] = dict(state=state, at=clock(), result=result)
         return result

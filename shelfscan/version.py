@@ -15,3 +15,12 @@ def baseline():
         git = lambda *a: subprocess.run(['git', '-C', HERE, *a], capture_output=True, text=True, timeout=5, check=True).stdout.strip()
         return {'sha': git('rev-parse', 'HEAD'), 'committed_at': git('log', '-1', '--format=%cI'), 'dirty': bool(git('status', '--porcelain'))}
     except (OSError, subprocess.SubprocessError): return None
+
+
+def commit_time(b):
+    """The baseline's commit time as 'YYYY-MM-DD HH:MM UTC', the way the pages show times, or None before git."""
+    import datetime
+    if not b or not b.get('sha'): return None
+    try: t = datetime.datetime.fromisoformat(b['committed_at']).astimezone(datetime.timezone.utc)
+    except (KeyError, TypeError, ValueError): return b['sha'][:7]
+    return t.strftime('%Y-%m-%d %H:%M UTC')

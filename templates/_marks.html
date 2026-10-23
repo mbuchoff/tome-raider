@@ -13,6 +13,8 @@
   {% endif %}
   <span class="fb-state"{% if v %} hidden{% endif %}>Unanswered</span>
   <button type="button" class="fb-clear"{% if not v %} hidden{% endif %}>Clear</button>
+  <input type="text" class="fb-note" maxlength="500" placeholder="Note (optional)" aria-label="Note on this book" value="{{ (mark or {}).get('note', '') }}">
+  <span class="fb-saved" hidden>saved</span>
 </span>
 {% endmacro %}
 
@@ -22,6 +24,8 @@
 .fb .fbb { margin-right: 0; }
 .fb .fb-state { color: var(--muted); font-size: 0.875rem; }
 .fb .fb-clear { background: transparent; color: var(--muted); border: 0; padding: 4px 6px; font-weight: 400; font-size: 0.875rem; text-decoration: underline; }
+.fb .fb-note { width: auto; flex: 1 1 12rem; min-width: 10rem; padding: 6px 8px; font-size: 0.875rem; }
+.fb .fb-saved { color: var(--ok); font-size: 0.8rem; }
 .fb [hidden] { display: none !important; }
 </style>
 <script>
@@ -35,19 +39,24 @@ document.querySelectorAll('.fb').forEach(function (box) {
     box.querySelector('.fb-state').hidden = !!verdict;
     box.querySelector('.fb-clear').hidden = !verdict;
   }
-  async function save(verdict) {
+  var note = box.querySelector('.fb-note'), saved = box.querySelector('.fb-saved');
+  async function save(change) {           // change: {verdict} or {note}; what's left out stays as it is
     var run = box.closest('[data-run]');
-    var body = {run_id: run ? run.dataset.run : '', key: box.dataset.key, verdict: verdict};
+    var body = Object.assign({run_id: run ? run.dataset.run : '', key: box.dataset.key}, change);
     try {
       var r = await fetch({{ marks_url|tojson }}, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
       if (!r.ok) throw new Error(r.status);
-      show((await r.json()).verdict || '');
+      var j = await r.json();
+      show(j.verdict || '');
+      if ('note' in change) { note.value = j.note || ''; saved.hidden = false; setTimeout(function () { saved.hidden = true; }, 1500); }
     } catch (e) { alert('Could not save that. Check the connection and try again.'); }
   }
   box.querySelectorAll('.fbb').forEach(function (btn) {
-    btn.addEventListener('click', function () { if (!btn.classList.contains('on')) save(btn.dataset.verdict); });
+    btn.addEventListener('click', function () { if (!btn.classList.contains('on')) save({verdict: btn.dataset.verdict}); });
   });
-  box.querySelector('.fb-clear').addEventListener('click', function () { save(''); });
+  box.querySelector('.fb-clear').addEventListener('click', function () { save({verdict: ''}); });
+  note.addEventListener('change', function () { save({note: note.value}); });
+  note.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); note.blur(); } });
 });
 </script>
 {% endmacro %}

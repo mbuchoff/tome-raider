@@ -19,17 +19,20 @@ def store():
 
 @bp.route('/captures/<cid>/marks', methods=['POST'])
 def set_mark(cid):
-    """JSON {run_id, key, verdict}; verdict 'worth', 'not' or 'should', or '' to clear the mark (unanswered)."""
+    """JSON {run_id, key, verdict, note}; verdict 'worth', 'not' or 'should', or '' to clear it (unanswered); note is optional
+    text, '' to remove it. Leaving either out keeps it as it is."""
     data = request.get_json(silent=True) or {}
-    run_id, key, verdict = str(data.get('run_id') or ''), str(data.get('key') or '')[:80], data.get('verdict') or ''
+    run_id, key = str(data.get('run_id') or ''), str(data.get('key') or '')[:80]
+    verdict = (data.get('verdict') or '') if 'verdict' in data else marks.KEEP
+    note = str(data.get('note') or '') if 'note' in data else marks.KEEP
     if not cid.isalnum() or not RUN_ID.match(run_id) or not key: abort(400)
-    if verdict not in ('',) + marks.VERDICTS: abort(400)
+    if verdict is not marks.KEEP and verdict not in ('',) + marks.VERDICTS: abort(400)
     try: results = store().get_json(repo.results_key(cid, run_id))[0]
     except NotFound: abort(404)
-    try: r = marks.set_mark(store(), cid, run_id, key, verdict, results)
+    try: r = marks.set_mark(store(), cid, run_id, key, verdict, results, note=note)
     except KeyError: abort(404)
     except Conflict: abort(409)
-    return {'ok': True, 'verdict': r['verdict'], 'marked': r['marked']}
+    return {'ok': True, 'verdict': r['verdict'], 'note': r['note'], 'marked': r['marked']}
 
 
 @bp.route('/marks.json')

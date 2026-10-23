@@ -46,7 +46,9 @@
   <form method="post" action="{{ url_for('set_credit') }}">
     <label for="balance">Balance in the Claude Console, $</label>
     <input type="number" id="balance" name="balance" min="0" max="100000" step="0.01" required>
-    <p class="small muted">Copy it from the Console's Billing page. Enter it again after adding credits or an auto-reload: the app subtracts everything the account spends from then on: its own scans at once, other use of the account after about an hour.{% if credit and credit.set_at %} Last entered {{ credit.set_at[:16].replace('T', ' ') }} UTC.{% endif %}</p>
+    <label for="balance-note">Note (optional)</label>
+    <input type="text" id="balance-note" name="note" maxlength="300" placeholder="e.g. after a $20 top-up">
+    <p class="small muted">Copy it from the Console's Billing page. Enter it again after adding credits or an auto-reload: the app subtracts everything the account spends from then on: its own scans at once, other use of the account after about an hour.{% if credit and credit.set_at %} Last entered {{ credit.set_at[:16].replace('T', ' ') }} UTC{% if credit.note %} ({{ credit.note }}){% endif %}.{% endif %}</p>
     <p><button class="secondary" type="submit">Save the balance</button></p>
   </form>
 </details>
@@ -65,7 +67,7 @@
     <td>{% if r.pulls is not none %}{{ r.pulls }}{% if r.leads %} + {{ r.leads }} lead{{ 's' if r.leads != 1 }}{% endif %}{% endif %}</td>
     <td>{{ c.marks or '' }}</td>
     <td>{% if r.cost %}${{ '%.2f' % r.cost.spent }}{% endif %}</td>
-    <td>{% if r.baseline and r.baseline.sha %}<code>{{ r.baseline.sha[:7] }}</code>{% elif r %}<span class="muted small">before git</span>{% endif %}</td>
+    <td>{% if r.baseline and r.baseline.sha %}<span title="commit {{ r.baseline.sha }}">{{ commit_time(r.baseline) }}</span>{% elif r %}<span class="muted small">before git</span>{% endif %}</td>
   </tr>
   {% endfor %}
 </table></div>
