@@ -18,9 +18,9 @@ def baseline():
 
 
 def commit_time(b):
-    """The baseline's commit time as 'YYYY-MM-DD HH:MM UTC', the way the pages show times, or None before git."""
+    """The baseline's commit time in UTC as 'YYYY-MM-DD HH:MM', the way the pages show times, or None before git."""
     import datetime
     if not b or not b.get('sha'): return None
     try: t = datetime.datetime.fromisoformat(b['committed_at']).astimezone(datetime.timezone.utc)
     except (KeyError, TypeError, ValueError): return b['sha'][:7]
-    return t.strftime('%Y-%m-%d %H:%M UTC')
+    return t.strftime('%Y-%m-%d %H:%M')

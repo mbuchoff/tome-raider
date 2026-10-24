@@ -53,7 +53,9 @@ c.post('/login', data={'passcode': 'x'})
 current['b'] = A
 cid = upload('rare'); runs = wait(cid)
 page = c.get(f'/captures/{cid}').data.decode()
-check('runs table shows the commit time and its SHA', '2026-10-23 21:29 UTC</span> (<code class="small" title="' + A['sha'] + '">aaaaaaa</code>)' in page, page[:0])
+check('runs table shows the commit time and its SHA', '<th>When (UTC)</th><th>Settings</th><th>Baseline (UTC)</th>' in page
+      and '2026-10-23 21:29</span> (<code class="small" title="' + A['sha'] + '">aaaaaaa</code>)' in page, page[:0])
+check('the run header still says UTC', '· baseline <span title="commit ' + A['sha'] + '">2026-10-23 21:29 UTC</span>' in page)
 check('the button names the current baseline', 'Run against the current baseline (aaaaaaa)</button>' in page)
 check('and is disabled: this capture already ran on it', '<button class="secondary" type="submit" disabled title="This capture already has a run on aaaaaaa' in page)
 r = c.post(f'/captures/{cid}/runs')
