@@ -17,6 +17,12 @@ def baseline():
     except (OSError, subprocess.SubprocessError): return None
 
 
+def is_current(b):
+    """Whether a run's baseline is the code running now: the same commit, and neither has uncommitted changes."""
+    cur = baseline()
+    return bool(b and cur and b.get('sha') and b['sha'] == cur.get('sha') and not b.get('dirty') and not cur.get('dirty'))
+
+
 def commit_time(b):
     """The baseline's commit time in UTC as 'YYYY-MM-DD HH:MM', the way the pages show times, or None before git."""
     import datetime

@@ -53,9 +53,11 @@ c.post('/login', data={'passcode': 'x'})
 current['b'] = A
 cid = upload('rare'); runs = wait(cid)
 page = c.get(f'/captures/{cid}').data.decode()
-check('runs table shows the commit time and its SHA', '<th>When (UTC)</th><th>Settings</th><th>Baseline (UTC)</th>' in page
-      and '2026-10-23 21:29</span> (<code class="small" title="' + A['sha'] + '">aaaaaaa</code>)' in page, page[:0])
-check('the run header still says UTC', '· baseline <span title="commit ' + A['sha'] + '">2026-10-23 21:29 UTC</span>' in page)
+check('runs table: the current baseline reads "latest"', '<th>When (UTC)</th><th>Settings</th><th>Baseline (UTC)</th>' in page
+      and '<td><span title="2026-10-23 21:29 UTC, commit ' + A['sha'] + '">latest</span></td>' in page, page[:0])
+check('the run header gives its time and SHA, without UTC', '· baseline <span title="commit ' + A['sha'] + '">2026-10-23 21:29</span> (<code class="small" title="'
+      + A['sha'] + '">aaaaaaa</code>)' in page)
+check('the scan page says "latest" too', '">latest</span></td>' in c.get('/').data.decode())
 check('the button names the current baseline', 'Run against the current baseline (aaaaaaa)</button>' in page)
 check('and is disabled: this capture already ran on it', '<button class="secondary" type="submit" disabled title="This capture already has a run on aaaaaaa' in page)
 r = c.post(f'/captures/{cid}/runs')
@@ -64,6 +66,8 @@ check('posting anyway starts nothing', len(wait(cid)) == 1 and runs[0]['id'] in 
 current['b'] = B
 page = c.get(f'/captures/{cid}').data.decode()
 check('a new commit enables it', 'type="submit">Run against the current baseline (bbbbbbb)</button>' in page)
+check('and the older run shows its time and SHA', '>latest<' not in page and '<td><span title="commit ' + A['sha'] + '">2026-10-23 21:29</span> (<code' in page
+      and '>latest<' not in c.get('/').data.decode())
 c.post(f'/captures/{cid}/runs'); runs = wait(cid)
 check('and runs it', len(runs) == 2 and runs[0]['baseline']['sha'] == B['sha'])
 check('disabled again after', 'type="submit" disabled title=' in c.get(f'/captures/{cid}').data.decode())
@@ -78,7 +82,9 @@ c.post(f'/captures/{cid}/runs'); runs = wait(cid)
 check('a failed run on the baseline', runs[0]['status'] == 'failed')
 check('leaves the button enabled to retry', 'type="submit">Run against' in c.get(f'/captures/{cid}').data.decode())
 current['b'] = dict(B, dirty=True)
-check('uncommitted changes never count as run', 'type="submit">Run against' in c.get(f'/captures/{cid}').data.decode())
+page = c.get(f'/captures/{cid}').data.decode()
+check('uncommitted changes never count as run', 'type="submit">Run against' in page)
+check('nor as "latest"', '>latest<' not in page)
 current['b'] = None
 page = c.get(f'/captures/{cid}').data.decode()
 check('no git: enabled, without a SHA', 'type="submit">Run against the current baseline</button>' in page)

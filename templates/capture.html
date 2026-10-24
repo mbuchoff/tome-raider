@@ -3,7 +3,7 @@
 {% block title %}Capture {{ capture.created[:16].replace('T', ' ') }} · Tome Raider{% endblock %}
 {% block head %}{% if busy %}<meta http-equiv="refresh" content="4">{% endif %}{% endblock %}
 {% block body %}
-{% macro baseline_text(b, utc=False) %}{% if b and b.sha %}<span title="commit {{ b.sha }}">{{ commit_time(b) }}{% if utc %} UTC{% endif %}</span> (<code class="small" title="{{ b.sha }}">{{ b.sha[:7] }}</code>){% if b.dirty %} <span class="muted small">with uncommitted changes</span>{% endif %}{% else %}<span class="muted">before git</span>{% endif %}{% endmacro %}
+{% macro baseline_text(b, latest=False) %}{% if latest and is_current_baseline(b) %}<span title="{{ commit_time(b) }} UTC, commit {{ b.sha }}">latest</span>{% elif b and b.sha %}<span title="commit {{ b.sha }}">{{ commit_time(b) }}</span> (<code class="small" title="{{ b.sha }}">{{ b.sha[:7] }}</code>){% if b.dirty %} <span class="muted small">with uncommitted changes</span>{% endif %}{% else %}<span class="muted">before git</span>{% endif %}{% endmacro %}
 {% macro where(b) %}Shelf {{ b.shelf }} from the top, {{ ordinal(b.pos) }} of {{ b.of }} from the left{% if 'flat' in (b.marks or '')|lower %}, lying flat{% endif %}{% endmacro %}
 {% macro look_for(b) %}{{ b.appearance or '—' }}{% if b.format and b.format != 'unclear' %}; {{ b.format }}{% endif %}{% if b.jacket == 'yes' %}, in jacket{% endif %}{% if b.imprint and 'unreadable' not in b.imprint and b.imprint.strip('?. ') %}; {{ b.imprint }}{% endif %}{% endmacro %}
 {% macro card(x, pi, kind) %}
@@ -46,7 +46,7 @@
   <tr{% if run and r.id == run.id %} class="selected"{% endif %}>
     <td>{% if run and r.id == run.id %}{{ r.created[:16].replace('T', ' ') }}{% else %}<a href="?run={{ r.id }}">{{ r.created[:16].replace('T', ' ') }}</a>{% endif %}</td>
     <td class="small">{{ settings_text((r.photos or capture.photos)[0] if (r.photos or capture.photos) else {}) }}</td>
-    <td>{{ baseline_text(r.baseline) }}</td>
+    <td>{{ baseline_text(r.baseline, latest=True) }}</td>
     <td class="status {{ r.status }}">{{ r.status }}</td>
     <td>{% if r.cost %}${{ '%.2f' % r.cost.spent }}{% endif %}</td>
     <td>{% if r.pulls is not none %}{{ r.pulls }}{% if r.leads %} + {{ r.leads }} lead{{ 's' if r.leads != 1 }}{% endif %}{% endif %}</td>
@@ -59,7 +59,7 @@
 
 {% if run %}
 <h2>Run of {{ run.created[:16].replace('T', ' ') }} UTC</h2>
-<p><span class="status {{ run.status }}">{{ run.status }}</span> · baseline {{ baseline_text(run.baseline, utc=True) }}
+<p><span class="status {{ run.status }}">{{ run.status }}</span> · baseline {{ baseline_text(run.baseline) }}
   {% if run.progress %} · {{ run.progress }}{% endif %}
   {% if run.cost %} · ${{ '%.2f' % run.cost.spent }} spent{% if run.cost.cached_calls %}, {{ run.cost.cached_calls }} saved responses reused{% endif %}{% endif %}
   {% if credit and credit.amount is not none %} · about ${{ '%.2f' % credit.amount }} credit left on the Anthropic account{% endif %}</p>
