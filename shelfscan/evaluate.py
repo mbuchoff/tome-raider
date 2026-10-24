@@ -33,9 +33,9 @@ def _get(store, key):
 
 
 def baseline_label(b):
-    """'code of 2026-10-23 21:09 UTC (fc7706d)' or 'before git'."""
+    """'2026-10-23 21:09 UTC (fc7706d)' or 'before git'."""
     if not b or not b.get('sha'): return 'before git'
-    return f"code of {version.commit_time(b)} ({b['sha'][:7]})" + (' + changes' if b.get('dirty') else '')
+    return f"{version.commit_time(b)} ({b['sha'][:7]})" + (' + changes' if b.get('dirty') else '')
 
 
 def summary(store):

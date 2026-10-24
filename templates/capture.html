@@ -3,7 +3,7 @@
 {% block title %}Capture {{ capture.created[:16].replace('T', ' ') }} · Tome Raider{% endblock %}
 {% block head %}{% if busy %}<meta http-equiv="refresh" content="4">{% endif %}{% endblock %}
 {% block body %}
-{% macro baseline_text(b) %}{% if b and b.sha %}<span title="commit {{ b.sha }}">code of {{ commit_time(b) }}</span> <code class="small" title="{{ b.sha }}">{{ b.sha[:7] }}</code>{% if b.dirty %} <span class="muted small">with uncommitted changes</span>{% endif %}{% else %}<span class="muted">before git</span>{% endif %}{% endmacro %}
+{% macro baseline_text(b) %}{% if b and b.sha %}<span title="commit {{ b.sha }}">{{ commit_time(b) }}</span> (<code class="small" title="{{ b.sha }}">{{ b.sha[:7] }}</code>){% if b.dirty %} <span class="muted small">with uncommitted changes</span>{% endif %}{% else %}<span class="muted">before git</span>{% endif %}{% endmacro %}
 {% macro where(b) %}Shelf {{ b.shelf }} from the top, {{ ordinal(b.pos) }} of {{ b.of }} from the left{% if 'flat' in (b.marks or '')|lower %}, lying flat{% endif %}{% endmacro %}
 {% macro look_for(b) %}{{ b.appearance or '—' }}{% if b.format and b.format != 'unclear' %}; {{ b.format }}{% endif %}{% if b.jacket == 'yes' %}, in jacket{% endif %}{% if b.imprint and 'unreadable' not in b.imprint and b.imprint.strip('?. ') %}; {{ b.imprint }}{% endif %}{% endmacro %}
 {% macro card(x, pi, kind) %}

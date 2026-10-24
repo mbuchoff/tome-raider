@@ -108,7 +108,7 @@ check('score run B', {k: sb[k] for k in ('agree', 'disagree', 'not found', 'unan
 s = evaluate.summary(store)
 c = s['captures'][0]
 check('summary: latest and marked-on runs', [(r['run'], r['roles'], r['baseline_label']) for r in c['runs']],
-      [(RUN_B, ['latest'], 'code of 2026-10-23 20:33 UTC (0dec24c)'), (RUN_A, ['marked on'], 'before git')])
+      [(RUN_B, ['latest'], '2026-10-23 20:33 UTC (0dec24c)'), (RUN_A, ['marked on'], 'before git')])
 check('summary totals', (s['totals']['latest']['agree'], s['totals']['marked_on']['disagree']), (1, 2))
 
 

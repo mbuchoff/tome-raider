@@ -67,7 +67,7 @@
     <td>{% if r.pulls is not none %}{{ r.pulls }}{% if r.leads %} + {{ r.leads }} lead{{ 's' if r.leads != 1 }}{% endif %}{% endif %}</td>
     <td>{{ c.marks or '' }}</td>
     <td>{% if r.cost %}${{ '%.2f' % r.cost.spent }}{% endif %}</td>
-    <td>{% if r.baseline and r.baseline.sha %}<span title="commit {{ r.baseline.sha }}">{{ commit_time(r.baseline) }}</span> <code class="small">{{ r.baseline.sha[:7] }}</code>{% elif r %}<span class="muted small">before git</span>{% endif %}</td>
+    <td>{% if r.baseline and r.baseline.sha %}<span title="commit {{ r.baseline.sha }}">{{ commit_time(r.baseline) }}</span> (<code class="small">{{ r.baseline.sha[:7] }}</code>){% elif r %}<span class="muted small">before git</span>{% endif %}</td>
   </tr>
   {% endfor %}
 </table></div>
