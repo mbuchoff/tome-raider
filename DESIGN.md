@@ -37,7 +37,7 @@ captures/<cid>/runs/<rid>/files/<name>                annotated photos and spine
   "x1", "y0", "y1", "title", "author"}}}`. The mark id is made when the mark is first set; `book` is the book as the run that
   was shown read it (photo is 1-based), so the mark can be matched to the same book in other runs.
 - `captures/index.json`: `{"captures": [{"id", "created", "photos", "category", "latest_run": {"id", "status", "created",
-  "pulls", "leads", "cost", "baseline"}, "marks": n}]}`, newest first. It is updated with ETag retries whenever a capture is
+  "pulls", "leads", "cost", "baseline"}, "runs": n, "total_cost": $ over every run, "marks": n}]}`, newest first. It is updated with ETag retries whenever a capture is
   made, a run changes status or a mark changes, so the scan page needs one read, not one per capture.
 - Writes that can race (marks, the index) use the store's ETags: read with its etag, write with `if_match`, retry on
   `Conflict`.

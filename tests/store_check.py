@@ -79,9 +79,10 @@ def offline():
     check('index: empty when missing', index.read(s), {'captures': []})
     for cid, created, cat in (('aaa', '2026-10-20T10:00:00+00:00', 'rare'), ('bbb', '2026-10-22T10:00:00+00:00', 'signed')):
         s.put_json(repo.capture_key(cid), {'id': cid, 'created': created, 'photos': [{'file': 'upload1.jpg', 'category': cat}]})
-    s.put_json(repo.run_key('bbb', '20261022T100000Z-0001'), {'id': '20261022T100000Z-0001', 'status': 'done', 'pulls': 3})
+    s.put_json(repo.run_key('bbb', '20261022T100000Z-0001'), {'id': '20261022T100000Z-0001', 'status': 'done', 'pulls': 3,
+                                                              'cost': {'spent': 0.21}})
     s.put_json(repo.run_key('bbb', '20261023T090000Z-0002'), {'id': '20261023T090000Z-0002', 'status': 'running', 'pulls': None,
-                                                              'baseline': {'sha': 'abc', 'committed_at': None, 'dirty': False}})
+                                                              'cost': {'spent': 0.05}, 'baseline': {'sha': 'abc', 'committed_at': None, 'dirty': False}})
     s.put_json(repo.marks_key('bbb'), {'m1': {'verdict': 'worth'}, 'm2': {'verdict': 'not'}, 'm3': {'verdict': ''}})
     index.update_entry(s, 'aaa'); index.update_entry(s, 'bbb')
     caps = index.read(s)['captures']
@@ -89,6 +90,7 @@ def offline():
     check('index: latest run is the newest run id', (caps[0]['latest_run']['id'], caps[0]['latest_run']['baseline']['sha']), ('20261023T090000Z-0002', 'abc'))
     check('index: marks count only answered ones', (caps[0]['marks'], caps[1]['marks']), (2, 0))
     check('index: photos and category', (caps[0]['photos'], caps[0]['category'], caps[1]['latest_run']), (1, 'signed', None))
+    check('index: run count and total cost over every run', [(c['runs'], c['total_cost']) for c in caps], [(2, 0.26), (0, None)])
     index.update_entry(s, 'bbb')
     check('index: updating replaces, not duplicates', len(index.read(s)['captures']), 2)
     s.delete_prefix('captures/aaa/'); index.update_entry(s, 'aaa')

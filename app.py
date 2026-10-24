@@ -66,9 +66,9 @@ app.register_blueprint(anthologies_web.bp)
 
 
 def recent_captures(n=25):
-    """The newest captures' summaries, from the index (rebuilt from the store if it's missing)."""
+    """The newest captures' summaries, from the index (rebuilt from the store if it's missing or out of date)."""
     entries = capture_index.read(store).get('captures') or []
-    if not entries and repo.capture_ids(store):
+    if (not entries or any('runs' not in e for e in entries)) and repo.capture_ids(store):      # or from before run counts
         capture_index.rebuild(store)
         entries = capture_index.read(store).get('captures') or []
     return entries[:n]
