@@ -119,10 +119,11 @@ def get_photo(store, cid, name):
     return store.get_bytes(photo_key(cid, name))
 
 
-def start_run(store, cid, cap):
+def start_run(store, cid, photo_cap):
     """A queued run of the capture on the code as it stands now, with the capture's current settings, which the run keeps;
-    the caller queues it for the worker."""
+    the caller queues it for the worker. Its cap is photo_cap for every photo."""
     photos = [{k: p.get(k) for k in ('file', 'name') + SETTINGS} for p in load_capture(store, cid)['photos']]
+    cap = round(photo_cap * len(photos), 2)
     run = dict(id=new_run_id(), capture_id=cid, created=now_iso('microseconds'), started=None, finished=None, status='queued',
                progress='waiting to start', error=None, cap=cap, cost=None, baseline=version.baseline(), photos=photos,
                pulls=None, leads=None, spines=None, unreadable=None)

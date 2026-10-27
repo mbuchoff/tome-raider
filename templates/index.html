@@ -39,7 +39,7 @@
     <span>Second read on rare, extremely rare and signed shelves, looking for flat and hidden books <span class="muted small">(Opus; roughly doubles the cost of those shelves)</span></span></label>
 
   <p><button type="submit">Scan</button></p>
-  <p class="small muted">Each run stops before it could spend more than ${{ '%.2f' % job_cap }} on Claude. Today: ${{ '%.2f' % spent_today }} of the ${{ '%.2f' % daily_cap }} daily limit.</p>
+  <p class="small muted">Each run stops before it could spend more than ${{ '%.2f' % photo_cap }} a photo on Claude. Today: ${{ '%.2f' % spent_today }} of the ${{ '%.2f' % daily_cap }} daily limit.</p>
 </form>
 <details class="card small"{% if credit_error %} open{% endif %}><summary>Update the credit balance</summary>
   {% if credit_error %}<p class="error">{{ credit_error }}</p>{% endif %}

@@ -11,7 +11,7 @@ Settings (environment variables):
   SHELFSCAN_HOME         the app's own disk: saved responses, the spend ledger, the credit balance, working folders and any
                          old jobs to migrate (default ./var; /home/shelfscan on Azure)
   AZURE_STORAGE_CONNECTION_STRING, SHELFSCAN_CONTAINER   where captures, runs and marks are kept (else ./var/store)
-  SHELFSCAN_JOB_CAP      Claude spending cap per run in $ (default 2.00)
+  SHELFSCAN_PHOTO_CAP    Claude spending cap per photo in $ (default 2.00); a run's cap is this times its photos
   SHELFSCAN_DAILY_CAP    Claude spending cap per UTC day in $ (default 10.00)
   SHELFSCAN_PRICE_FILES  comma-separated price files, if not the ones in data/"""
 import datetime, hmac, mimetypes, os, queue, secrets, shutil, threading, time
@@ -25,7 +25,7 @@ from shelfscan.store import NotFound, open_store
 
 HOME = os.environ.get('SHELFSCAN_HOME') or os.path.join(os.path.dirname(os.path.abspath(__file__)), 'var')
 JOBS, CACHE, WORK = os.path.join(HOME, 'jobs'), os.path.join(HOME, 'cache'), os.path.join(HOME, 'work')
-JOB_CAP = float(os.environ.get('SHELFSCAN_JOB_CAP', '2.00'))
+PHOTO_CAP = float(os.environ.get('SHELFSCAN_PHOTO_CAP', '2.00'))
 DAILY_CAP = float(os.environ.get('SHELFSCAN_DAILY_CAP', '10.00'))
 ADMIN_KEY = os.environ.get('ANTHROPIC_ADMIN_KEY', '').strip()
 DESCRIPTIONS = {'thrift': 'under $10 a book', 'cheap': '$10–$30 a book', 'rare': '$30–$100 a book', 'extreme': '$100 and up', 'signed': 'signed copies'}
@@ -54,7 +54,7 @@ def queue_run(cid):
     baseline with the same settings (not failed or stopped), returns that one instead of running it twice."""
     same = repo.matching_run(store, cid, version.baseline())
     if same: return same['id']
-    run = repo.start_run(store, cid, JOB_CAP)
+    run = repo.start_run(store, cid, PHOTO_CAP)
     work.put((cid, run['id']))
     return run['id']
 
@@ -152,7 +152,7 @@ def health():
 
 @app.route('/')
 def index(credit_error=None, error=None):
-    return render_template('index.html', captures=recent_captures(), descriptions=DESCRIPTIONS, job_cap=JOB_CAP, daily_cap=DAILY_CAP,
+    return render_template('index.html', captures=recent_captures(), descriptions=DESCRIPTIONS, photo_cap=PHOTO_CAP, daily_cap=DAILY_CAP,
                            spent_today=spent_today(), credit=credit.remaining(HOME, ADMIN_KEY), credit_error=credit_error, error=error)
 
 

@@ -47,6 +47,7 @@ def run(job_dir, claude, now=time.time, on_progress=None):
     save(job)
     t0 = now()
     budget = Budget(job.get('cap', 2.0))
+    parts = [budget.part() for _ in job['photos']]       # one per photo, in order, so the cost says what each photo cost
     ref = reference()
     results = {'photos': [], 'version': ref.version()}
     lock = threading.Lock()
@@ -61,6 +62,7 @@ def run(job_dir, claude, now=time.time, on_progress=None):
             save(job)
 
     def one_photo(k, p):
+        budget = parts[k - 1]                           # this photo's calls spend through its part of the job's budget
         progress(k, 'finding shelves')
         im = images.load(os.path.join(job_dir, p['file']))
         overrides = {int(s): c for s, c in (p.get('overrides') or {}).items()}

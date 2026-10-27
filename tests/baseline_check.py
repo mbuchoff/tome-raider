@@ -11,7 +11,7 @@ from shelfscan import pipeline, repo, version
 
 SAMPLE = json.load(open(glob.glob('/tmp/claude-1000/-home-node-repos-norris/079c046b-3c36-4ac5-bc43-0762eabab3cb/scratchpad/fbcheck/r4-4ed2dbeb691f.json')[0]))
 fail = []
-SPENT = 0.25                                         # what each photo of a fake run costs (the sample run reused saved responses)
+SPENT = 0.25                    # what a fake run's first photo costs, each next one 5¢ more (the sample run reused saved responses)
 
 
 def fake_run(job_dir, claude, now=time.time, on_progress=None):
@@ -19,7 +19,8 @@ def fake_run(job_dir, claude, now=time.time, on_progress=None):
     if fail: raise RuntimeError(fail.pop())
     results = copy.deepcopy(SAMPLE)
     results['photos'] = [copy.deepcopy(SAMPLE['photos'][0]) for _ in job['photos']]       # one result per photo
-    results['cost'] = dict(results['cost'], spent=SPENT * len(job['photos']))
+    costs = [round(SPENT + 0.05 * i, 2) for i in range(len(job['photos']))]
+    results['cost'] = dict(results['cost'], spent=sum(costs), photos=[{'spent': c, 'calls': 1, 'cached_calls': 0} for c in costs])
     for ph in results['photos']: open(os.path.join(job_dir, ph['annotated']), 'wb').write(b'annotated')
     job.update(status='done', progress='', cost=results['cost'], finished=repo.now_iso())
     return job, results
@@ -59,7 +60,7 @@ page = c.get(f'/captures/{cid}').data.decode()
 check('runs table: the current baseline reads "latest"', '<th>When (UTC)</th><th>Settings</th><th>Baseline (UTC)</th>' in page
       and '<td><span title="2026-10-23 21:29 UTC, commit ' + A['sha'] + '">latest</span> (<code class="small" title="' + A['sha'] + '">aaaaaaa</code>)</td>' in page, page[:0])
 spent, books = SPENT, SAMPLE['photos'][0]['books']
-check('the run header: one photo, and the cost of a book', f"spent on 1 photo ({100 * spent / books:.2f}¢ a book)" in page and ' a photo)' not in page)
+check('the run header: one photo, and the cost of a book, no tooltip', f"spent on 1 photo ({100 * spent / books:.2f}¢ a book)" in page and 'class="tip"' not in page)
 check('the run header gives its time and SHA, without UTC', '· baseline <span title="commit ' + A['sha'] + '">2026-10-23 21:29</span> (<code class="small" title="'
       + A['sha'] + '">aaaaaaa</code>)' in page)
 check('the scan page says "latest" too', '">latest</span> (<code class="small">aaaaaaa</code>)</td>' in c.get('/').data.decode())
@@ -107,13 +108,16 @@ r = c.post('/captures', data={'photos': [(io.BytesIO(b'left' * 500), 'a.jpg'), (
 cid2 = r.headers['Location'].split('/captures/')[1].split('?')[0]; run2 = wait(cid2)[0]
 page = c.get(f'/captures/{cid2}').data.decode()
 check('two photos read', run2['photos_read'] == 2 and run2['spines'] == 2 * books, run2)
-check('the run header: two photos, a photo and a book', f"spent on 2 photos (${spent:.2f} a photo, {100 * spent / books:.2f}¢ a book)" in page, page[page.find(' spent'):][:120])
-check('the runs table: a photo', f"${2 * spent:.2f} <span class=\"small muted\">(${spent:.2f} a photo)</span>" in page)
+tip = 'title="Photo 1 (a.jpg): $0.25&#10;Photo 2 (b.jpg): $0.30"'
+check('the run header: each photo\'s cost on "2 photos"', f' spent on <span class="tip" {tip}>2 photos</span> ({100 * 0.55 / (2 * books):.2f}¢ a book)' in page,
+      page[page.find(' spent'):][:200])
+check('the runs table: the same tooltip on the total', f'<span class="tip" {tip}>$0.55</span>' in page)
 # an old run, from before photos_read, stopped after one of its two photos
-old = dict(run2, status='stopped'); old.pop('photos_read')
+old = dict(run2, status='stopped', cost={k: v for k, v in run2['cost'].items() if k != 'photos'}); old.pop('photos_read')
 repo.save_run(store, old)
 res = repo.load_results(store, cid2, run2['id']); res['photos'] = res['photos'][:1]; store.put_json(repo.results_key(cid2, run2['id']), res)
 page = c.get(f'/captures/{cid2}').data.decode()
-check('an old stopped run: one of two photos read', ' spent on 1 of 2 photos (' in page, page[page.find(' spent'):][:120])
-check('and no cost a photo in the table, where its results are not read', ' a photo)</span>' not in page)
+check('an old run: one of two photos read, and only the average', ' spent on <span class="tip" title="About $0.55 a photo: this run kept only its total">1 of 2 photos</span> ('
+      in page, page[page.find(' spent'):][:200])
+check('and no tooltip in the table, where its results are not read', '<td>$0.55</td>' in page)
 sys.exit(1 if check.failed else 0)

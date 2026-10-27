@@ -55,7 +55,7 @@ key = re.search(r'sk-ant-[A-Za-z0-9_-]+', open(sys.argv[1]).read()).group(0)
 admin = re.search(r'sk-ant-admin[A-Za-z0-9_-]+', open(sys.argv[3]).read()) if os.path.exists(sys.argv[3]) else None
 if os.path.exists(sys.argv[3]) and not admin: sys.exit('admin-claude-key.md has no Admin API key (sk-ant-admin...) in it')
 s = {'ANTHROPIC_API_KEY': key, 'SHELFSCAN_PASSCODE': os.environ['SHELFSCAN_PASSCODE'], 'SHELFSCAN_SECRET': os.environ['SHELFSCAN_SECRET'],
-     'SHELFSCAN_HOME': '/home/shelfscan', 'SHELFSCAN_JOB_CAP': '2.00', 'SHELFSCAN_DAILY_CAP': '10.00', 'SCM_DO_BUILD_DURING_DEPLOYMENT': 'true'}
+     'SHELFSCAN_HOME': '/home/shelfscan', 'SHELFSCAN_PHOTO_CAP': '2.00', 'SHELFSCAN_DAILY_CAP': '10.00', 'SCM_DO_BUILD_DURING_DEPLOYMENT': 'true'}
 if admin: s['ANTHROPIC_ADMIN_KEY'] = admin.group(0)
 storage = re.search(r'AZURE_STORAGE_CONNECTION_STRING=(\S+)', open(sys.argv[4]).read()) if os.path.exists(sys.argv[4]) else None
 if os.path.exists(sys.argv[4]) and not storage: sys.exit('azure-storage.md has no AZURE_STORAGE_CONNECTION_STRING= line')

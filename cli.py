@@ -22,7 +22,7 @@ ap.add_argument('--overrides', default='')
 ap.add_argument('--minimum', type=float)
 ap.add_argument('--note', default='')
 ap.add_argument('--no-second-read', action='store_true')
-ap.add_argument('--cap', type=float, default=2.00)
+ap.add_argument('--cap', type=float, default=2.00, help='spending cap per photo in $')
 ap.add_argument('--cache', default=os.path.join(HERE, 'var', 'cache'))
 a = ap.parse_args()
 

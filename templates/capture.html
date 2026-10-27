@@ -4,6 +4,8 @@
 {% block head %}{% if busy %}<meta http-equiv="refresh" content="4">{% endif %}{% endblock %}
 {% block body %}
 {% macro baseline_text(b, latest=False) %}{% if latest and is_current_baseline(b) %}<span title="{{ commit_time(b) }} UTC, commit {{ b.sha }}">latest</span> (<code class="small" title="{{ b.sha }}">{{ b.sha[:7] }}</code>){% elif b and b.sha %}<span title="commit {{ b.sha }}">{{ commit_time(b) }}</span> (<code class="small" title="{{ b.sha }}">{{ b.sha[:7] }}</code>){% if b.dirty %} <span class="muted small">with uncommitted changes</span>{% endif %}{% else %}<span class="muted">before git</span>{% endif %}{% endmacro %}
+{# a tooltip with each photo's cost; runs from before 27 October 2026 kept only their total, so they get the average #}
+{% macro photo_costs(r, ph, n) %}{% if r.cost.photos %}{% for c in r.cost.photos %}Photo {{ loop.index }}{% if ph[loop.index0] is defined and ph[loop.index0].name %} ({{ ph[loop.index0].name }}){% endif %}: ${{ '%.2f' % c.spent }}{% if not loop.last %}&#10;{% endif %}{% endfor %}{% elif n %}About ${{ '%.2f' % (r.cost.spent / n) }} a photo: this run kept only its total{% endif %}{% endmacro %}
 {% macro where(b) %}Shelf {{ b.shelf }} from the top, {{ ordinal(b.pos) }} of {{ b.of }} from the left{% if 'flat' in (b.marks or '')|lower %}, lying flat{% endif %}{% endmacro %}
 {% macro look_for(b) %}{{ b.appearance or '—' }}{% if b.format and b.format != 'unclear' %}; {{ b.format }}{% endif %}{% if b.jacket == 'yes' %}, in jacket{% endif %}{% if b.imprint and 'unreadable' not in b.imprint and b.imprint.strip('?. ') %}; {{ b.imprint }}{% endif %}{% endmacro %}
 {% macro card(x, pi, kind) %}
@@ -49,7 +51,8 @@
     <td>{{ baseline_text(r.baseline, latest=True) }}</td>
     <td class="status {{ r.status }}">{{ r.status }}</td>
     {% set n = photos_read(r, capture) %}
-    <td>{% if r.cost %}${{ '%.2f' % r.cost.spent }}{% if n and n > 1 and r.cost.spent %} <span class="small muted">(${{ '%.2f' % (r.cost.spent / n) }} a photo)</span>{% endif %}{% endif %}</td>
+    <td>{% if r.cost %}{% set ph = r.photos or capture.photos %}{% set tip = photo_costs(r, ph, n) if ph|length > 1 and r.cost.spent else '' %}
+      {%- if tip %}<span class="tip" title="{{ tip }}">${{ '%.2f' % r.cost.spent }}</span>{% else %}${{ '%.2f' % r.cost.spent }}{% endif %}{% endif %}</td>
     <td>{% if r.pulls is not none %}{{ r.pulls }}{% if r.leads %} + {{ r.leads }} lead{{ 's' if r.leads != 1 }}{% endif %}{% endif %}</td>
   </tr>
   {% endfor %}
@@ -62,9 +65,10 @@
 <h2>Run of {{ run.created[:16].replace('T', ' ') }} UTC</h2>
 <p><span class="status {{ run.status }}">{{ run.status }}</span> · baseline {{ baseline_text(run.baseline) }}
   {% if run.progress %} · {{ run.progress }}{% endif %}
-  {% if run.cost %} · ${{ '%.2f' % run.cost.spent }} spent{% set n = photos_read(run, capture, results) %}{% set planned = (run.photos or capture.photos)|length %}
-    {%- if n %} on {% if n < planned %}{{ n }} of {{ planned }} photos{% else %}{{ n }} photo{{ 's' if n != 1 }}{% endif %}
-    {%- if run.cost.spent and (n > 1 or run.spines) %} ({% if n > 1 %}${{ '%.2f' % (run.cost.spent / n) }} a photo{% if run.spines %}, {% endif %}{% endif %}{% if run.spines %}{{ '%.2f' % (100 * run.cost.spent / run.spines) }}¢ a book{% endif %}){% endif %}{% endif %}
+  {% if run.cost %} · ${{ '%.2f' % run.cost.spent }} spent{% set n = photos_read(run, capture, results) %}{% set ph = run.photos or capture.photos %}{% set planned = ph|length %}
+    {%- if n %} on {% set what %}{% if n < planned %}{{ n }} of {{ planned }} photos{% else %}{{ n }} photo{{ 's' if n != 1 }}{% endif %}{% endset %}
+    {%- set tip = photo_costs(run, ph, n) if planned > 1 and run.cost.spent else '' %}{% if tip %}<span class="tip" title="{{ tip }}">{{ what }}</span>{% else %}{{ what }}{% endif %}
+    {%- if run.cost.spent and run.spines %} ({{ '%.2f' % (100 * run.cost.spent / run.spines) }}¢ a book){% endif %}{% endif %}
     {%- if run.cost.cached_calls %}, {{ run.cost.cached_calls }} saved responses reused{% endif %}{% endif %}
   {% if credit and credit.amount is not none %} · about ${{ '%.2f' % credit.amount }} credit left on the Anthropic account{% endif %}</p>
 {% if run.error %}<p class="error">{{ run.error }}</p>{% endif %}
