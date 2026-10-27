@@ -11,12 +11,15 @@ from shelfscan import pipeline, repo, version
 
 SAMPLE = json.load(open(glob.glob('/tmp/claude-1000/-home-node-repos-norris/079c046b-3c36-4ac5-bc43-0762eabab3cb/scratchpad/fbcheck/r4-4ed2dbeb691f.json')[0]))
 fail = []
+SPENT = 0.25                                         # what each photo of a fake run costs (the sample run reused saved responses)
 
 
 def fake_run(job_dir, claude, now=time.time, on_progress=None):
     job = pipeline.load_job(job_dir)
     if fail: raise RuntimeError(fail.pop())
     results = copy.deepcopy(SAMPLE)
+    results['photos'] = [copy.deepcopy(SAMPLE['photos'][0]) for _ in job['photos']]       # one result per photo
+    results['cost'] = dict(results['cost'], spent=SPENT * len(job['photos']))
     for ph in results['photos']: open(os.path.join(job_dir, ph['annotated']), 'wb').write(b'annotated')
     job.update(status='done', progress='', cost=results['cost'], finished=repo.now_iso())
     return job, results
@@ -55,6 +58,8 @@ cid = upload('rare'); runs = wait(cid)
 page = c.get(f'/captures/{cid}').data.decode()
 check('runs table: the current baseline reads "latest"', '<th>When (UTC)</th><th>Settings</th><th>Baseline (UTC)</th>' in page
       and '<td><span title="2026-10-23 21:29 UTC, commit ' + A['sha'] + '">latest</span> (<code class="small" title="' + A['sha'] + '">aaaaaaa</code>)</td>' in page, page[:0])
+spent, books = SPENT, SAMPLE['photos'][0]['books']
+check('the run header: one photo, and the cost of a book', f"spent on 1 photo ({100 * spent / books:.2f}¢ a book)" in page and ' a photo)' not in page)
 check('the run header gives its time and SHA, without UTC', '· baseline <span title="commit ' + A['sha'] + '">2026-10-23 21:29</span> (<code class="small" title="'
       + A['sha'] + '">aaaaaaa</code>)' in page)
 check('the scan page says "latest" too', '">latest</span> (<code class="small">aaaaaaa</code>)</td>' in c.get('/').data.decode())
@@ -73,7 +78,7 @@ check('and runs it', len(runs) == 2 and runs[0]['baseline']['sha'] == B['sha'])
 check('disabled again after', 'type="submit" disabled title=' in c.get(f'/captures/{cid}').data.decode())
 index = c.get('/').data.decode()
 check('scan page: renamed columns', '<th>Runs</th><th>Pulls</th><th>Marked</th><th>Total Cost</th><th>Latest Baseline (UTC)</th>' in index)
-check('scan page: two runs, and the cost of both', '<td>2</td>' in index and f"<td>${2 * SAMPLE['cost']['spent']:.2f}</td>" in index, SAMPLE['cost'])
+check('scan page: two runs, and the cost of both', '<td>2</td>' in index and f"<td>${2 * SPENT:.2f}</td>" in index)
 from shelfscan import index as capture_index
 capture_index._write(store, lambda caps: [{k: v for k, v in e.items() if k not in ('runs', 'total_cost')} for e in caps])
 check('an index from before run counts is rebuilt', [e.get('runs') for e in web.recent_captures()] == [2])
@@ -95,4 +100,20 @@ check('nor as "latest"', '>latest<' not in page)
 current['b'] = None
 page = c.get(f'/captures/{cid}').data.decode()
 check('no git: enabled, without a SHA', 'type="submit">Run against the current baseline</button>' in page)
+
+# a run of two photos gives the cost of one, in the header and the runs table
+r = c.post('/captures', data={'photos': [(io.BytesIO(b'left' * 500), 'a.jpg'), (io.BytesIO(b'right' * 500), 'b.jpg')], 'category': 'cheap'},
+           content_type='multipart/form-data')
+cid2 = r.headers['Location'].split('/captures/')[1].split('?')[0]; run2 = wait(cid2)[0]
+page = c.get(f'/captures/{cid2}').data.decode()
+check('two photos read', run2['photos_read'] == 2 and run2['spines'] == 2 * books, run2)
+check('the run header: two photos, a photo and a book', f"spent on 2 photos (${spent:.2f} a photo, {100 * spent / books:.2f}¢ a book)" in page, page[page.find(' spent'):][:120])
+check('the runs table: a photo', f"${2 * spent:.2f} <span class=\"small muted\">(${spent:.2f} a photo)</span>" in page)
+# an old run, from before photos_read, stopped after one of its two photos
+old = dict(run2, status='stopped'); old.pop('photos_read')
+repo.save_run(store, old)
+res = repo.load_results(store, cid2, run2['id']); res['photos'] = res['photos'][:1]; store.put_json(repo.results_key(cid2, run2['id']), res)
+page = c.get(f'/captures/{cid2}').data.decode()
+check('an old stopped run: one of two photos read', ' spent on 1 of 2 photos (' in page, page[page.find(' spent'):][:120])
+check('and no cost a photo in the table, where its results are not read', ' a photo)</span>' not in page)
 sys.exit(1 if check.failed else 0)

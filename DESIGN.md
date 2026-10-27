@@ -31,7 +31,7 @@ captures/<cid>/runs/<rid>/files/<name>                annotated photos and spine
   The settings are the latest ones, used for the next run.
 - `captures/aliases.json`: `{"<merged capture id>": "<capture it was merged into>"}`, written by tools/consolidate.py.
 - `run.json`: `{"id", "capture_id", "created", "started", "finished", "status", "progress", "error", "cap", "cost",
-  "baseline", "photos", "pulls", "leads", "spines", "unreadable"}`; `photos` are the settings the run used (runs from before
+  "baseline", "photos", "photos_read", "pulls", "leads", "spines", "unreadable"}`; `photos` are the settings the run used (runs from before
   they were kept fall back to the capture's). status: queued, running, done, failed, stopped.
 - `marks.json`: `{"<mark id>": {"verdict", "label", "category", "value", "at", "run_id", "book": {"photo", "shelf", "x0",
   "x1", "y0", "y1", "title", "author"}}}`. The mark id is made when the mark is first set; `book` is the book as the run that

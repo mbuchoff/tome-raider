@@ -38,7 +38,7 @@ results = repo.load_results(store, cid, run['id']) or {'photos': [], 'cost': run
 json.dump(results, open(os.path.join(a.out, 'results.json'), 'w'), indent=1, default=str)
 
 env = jinja2.Environment(loader=jinja2.FileSystemLoader(os.path.join(HERE, 'templates')), autoescape=True)
-env.globals.update(ordinal=lambda n: f"{int(n)}{'th' if 10 <= int(n) % 100 <= 20 else {1: 'st', 2: 'nd', 3: 'rd'}.get(int(n) % 10, 'th')}", categories=CATEGORIES, commit_time=version.commit_time, is_current_baseline=lambda b: False)
+env.globals.update(ordinal=lambda n: f"{int(n)}{'th' if 10 <= int(n) % 100 <= 20 else {1: 'st', 2: 'nd', 3: 'rd'}.get(int(n) % 10, 'th')}", categories=CATEGORIES, commit_time=version.commit_time, photos_read=repo.photos_read, is_current_baseline=lambda b: False)
 files = os.path.relpath(os.path.join(store.root, *repo.run_file_key(cid, run['id'], '').split('/')), a.out)
 html = env.get_template('capture.html').render(capture=capture, runs=[run], run=run, results=results if results['photos'] else None, busy=False,
                                                baseline=version.baseline(), marks={}, file_url=lambda n: f'{files}/{n}')

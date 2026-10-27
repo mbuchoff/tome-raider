@@ -167,6 +167,14 @@ def load_results(store, cid, rid):
     except NotFound: return None
 
 
+def photos_read(run, capture, results=None):
+    """How many of the run's photos it read: on run.json since 27 October 2026; for older runs, from the results if given, or
+    every photo of a run that finished; None while running or when it can't be told."""
+    if run.get('photos_read') is not None: return run['photos_read']
+    if results is not None: return len(results.get('photos') or [])
+    return len(run_photos(capture, run)) if run.get('status') == 'done' else None
+
+
 def put_run_file(store, cid, rid, name, data):
     store.put_bytes(run_file_key(cid, rid, name), data)
 
@@ -178,5 +186,5 @@ def get_run_file(store, cid, rid, name):
 def run_counts(results):
     """The counts kept on run.json, from a run's results."""
     ph = results.get('photos') or []
-    return dict(pulls=sum(len(p.get('pulls') or []) for p in ph), leads=sum(len(p.get('leads') or []) for p in ph),
+    return dict(photos_read=len(ph), pulls=sum(len(p.get('pulls') or []) for p in ph), leads=sum(len(p.get('leads') or []) for p in ph),
                 spines=sum(p.get('books') or 0 for p in ph), unreadable=sum(p.get('unreadable') or 0 for p in ph))
