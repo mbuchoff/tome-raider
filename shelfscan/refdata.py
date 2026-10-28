@@ -71,12 +71,13 @@ def _tables(path):
 
 
 def load_prices(paths):
-    """Rows of dict(title, author, price, date, year, url, image, condition, signed, publisher, text); repeated eBay item ids
-    are kept once, and so is a sale an earlier file already holds (same title, price and date)."""
-    rows, seen, files, earlier = [], set(), [], set()
+    """Rows of dict(title, author, price, date, year, url, item, image, condition, signed, publisher, text). A repeated eBay
+    item number loads once. So does a dated sale an earlier file already holds (same title, price and date, and no
+    different item number): what the later file adds (condition, signed, publisher, image) goes onto the first."""
+    rows, seen, files, earlier = [], set(), [], {}       # earlier: (title, price, date) -> the row an earlier file gave
     for path in paths:
         files.append({'file': os.path.basename(path), 'sha256': hashlib.sha256(open(path, 'rb').read()).hexdigest()[:12]})
-        n0, dupes, mine = len(rows), 0, set()
+        n0, dupes, mine = len(rows), 0, {}
         for sheet, table in _tables(path):
             if not table: continue
             head = [str(h or '').strip().lower() for h in table[0]]
@@ -88,22 +89,27 @@ def load_prices(paths):
                 if not title or price is None: continue
                 url = (get('url') or '').strip()
                 m = re.search(r'/itm/(?:[^/]+/)?(\d{9,})', url)
-                if m:
-                    if m.group(1) in seen: continue
-                    seen.add(m.group(1))
+                item = m.group(1) if m else ''
+                if item:
+                    if item in seen: continue
+                    seen.add(item)
                 date = to_date(get('date'))
-                key = (title.lower(), round(price, 2), date)
-                if key in earlier:
-                    dupes += 1; continue
-                mine.add(key)
-                author = (get('author') or '').strip()
-                ys = [int(y) for y in YEAR.findall(title)]
                 image = str(get('image') or '').strip()
-                rows.append(dict(title=title, author=author, price=price, date=date, url=url if url.startswith('http') else '',
-                                 image=image if image.startswith('http') else '', condition=str(get('condition') or '').strip(),
-                                 signed=str(get('signed') or '').strip().lower() in ('yes', 'y', 'true', '1'),
-                                 publisher=str(get('publisher') or '').strip(), year=min(ys) if ys else None, text=(title + ' ' + author).lower()))
-        earlier |= mine
+                row = dict(title=title, author=(get('author') or '').strip(), price=price, date=date, url=url if url.startswith('http') else '',
+                           item=item, image=image if image.startswith('http') else '', condition=str(get('condition') or '').strip(),
+                           signed=str(get('signed') or '').strip().lower() in ('yes', 'y', 'true', '1'), publisher=str(get('publisher') or '').strip())
+                key = (title.lower(), round(price, 2), date)
+                first = earlier.get(key) if date else None          # an undated sale is never taken for another
+                if first is not None and not (item and first['item'] and item != first['item']):
+                    for k in ('condition', 'publisher', 'image', 'item', 'url', 'author'):      # what this file knows that the first didn't
+                        if not first[k]: first[k] = row[k]
+                    first['signed'] = first['signed'] or row['signed']
+                    dupes += 1; continue
+                ys = [int(y) for y in YEAR.findall(title)]
+                row.update(year=min(ys) if ys else None, text=(title + ' ' + row['author']).lower())
+                rows.append(row)
+                mine.setdefault(key, row)
+        for k, r in mine.items(): earlier.setdefault(k, r)
         files[-1]['rows'] = len(rows) - n0
         if dupes: files[-1]['already_loaded'] = dupes
     dates = sorted(r['date'] for r in rows if r['date'])
@@ -122,6 +128,12 @@ def name_rx(n):
 
 
 TOKEN = re.compile(r'[a-z0-9]+')      # the index's words: a word-bounded match of a text always holds each of these whole
+# the only characters re.I takes for an ASCII letter once text is lowercased ('İ' and 'K' lowercase to plain letters)
+REGEX_TWINS = str.maketrans({'ı': 'i', 'ſ': 's'})
+
+
+def tokens(s):
+    return TOKEN.findall((s or '').lower().translate(REGEX_TWINS))
 
 
 def lookup_words(t):
@@ -166,7 +178,7 @@ class Reference:
             self.price_version['rows'] = len(self.prices)
         self._index = collections.defaultdict(list)          # word -> the positions of the sales whose text holds it
         for i, r in enumerate(self.prices):
-            for t in set(TOKEN.findall(r['text'])): self._index[t].append(i)
+            for t in set(tokens(r['text'])): self._index[t].append(i)
         self._collections = None
         lines = open(os.path.join(data_dir, 'frequent-authors.tsv')).read().splitlines()[1:]
         self.frequent = []
@@ -201,7 +213,7 @@ class Reference:
         word-bounded match of the text could find, and few more. A text with no word to look up gives every sale."""
         ids = set()
         for t in texts:
-            runs = TOKEN.findall((t or '').lower())
+            runs = tokens(t)
             if not runs: return self.prices
             ids.update(min((self._index.get(w, ()) for w in runs), key=len))
         return [self.prices[i] for i in sorted(ids)]

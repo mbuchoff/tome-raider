@@ -1,6 +1,7 @@
-"""Checks how sold listings load: a sale an earlier file already holds is kept once, the conditions rules.json leaves out
-are dropped, a Signed column marks signed sales, and the word index finds exactly what a full scan finds. Small made-up
-files; no shop data, no Claude calls.
+"""Checks how sold listings load: a sale an earlier file already holds is kept once (with what the later file adds, and
+never across different eBay item numbers), the conditions rules.json leaves out are dropped, a Signed column marks signed
+sales, Easton Press and Franklin Library sales value only their own copies, and the word index finds exactly what a full
+scan finds. Small made-up files; no shop data, no Claude calls.
 usage: python tests/prices_check.py"""
 import csv, json, os, sys, tempfile
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
@@ -24,6 +25,10 @@ core = sheet('core.csv', ['Title', 'Sale Price', 'Sale Date'], [
     ['Flannery O\'Connor Wise Blood First Edition', '$450.00', 'Jan 5, 2024'],
     ['Flannery O\'Connor Wise Blood First Edition', '$450.00', 'Jan 5, 2024'],           # the same sale twice in one file: both kept
     ['Daphne du Maurier Don\'t Look Now first edition', '$120.00', 'Feb 1, 2025'],
+    ['Fahrenheit 451 Ray Bradbury Easton Press', '$300.00', 'Jan 1, 2025'],                   # the Easton file says signed and sealed
+    ['Fahrenheit 451 Ray Bradbury Ballantine first edition 1953', '$900.00', 'Mar 3, 2025'],
+    ['INVISIBLE SCARLET PEOPLE first edition', '$80.00', 'Jul 7, 2025'],
+    ['American Psycho Bret Easton Ellis first edition', '$200.00', 'Aug 8, 2025'],
 ])
 firsts = sheet('firsts.csv', ['Image Link', 'Title', 'Sold Price', 'Sale Date'], [
     ['https://i.ebayimg.com/x/1.JPG', 'Flannery O\'Connor Wise Blood First Edition', '$450.00', 'Jan 5, 2024'],     # already in core
@@ -34,28 +39,47 @@ easton = sheet('easton.csv', ['Image Link', 'Title', 'Condition', 'Signed', 'Pub
     ['https://i.ebayimg.com/x/4.JPG', 'Fahrenheit 451 Ray Bradbury Easton Press Collector Edition', 'Used', 'Yes', 'Easton Press', '$300.00', 'Aug 12, 2024'],
     ['https://i.ebayimg.com/x/5.JPG', 'Fahrenheit 451 Ray Bradbury Easton Press', 'Sealed', 'No', 'Easton Press', '$400.00', 'May 1, 2025'],
     ['https://i.ebayimg.com/x/6.JPG', 'Fahrenheit 451 Ray Bradbury Easton Press', 'New', 'No', 'Easton Press', '$350.00', 'May 2, 2025'],
+    ['https://i.ebayimg.com/x/7.JPG', 'Fahrenheit 451 Ray Bradbury Easton Press', 'Sealed', 'Yes', 'Easton Press', '$300.00', 'Jan 1, 2025'],
 ])
+listed = sheet('listed.csv', ['Title', 'ebay link', 'Price', 'sell Date'], [
+    ['Charlotte\'s Web E.B. White first edition', 'https://www.ebay.com/itm/111111111111', '$500.00', '04/01/2024'],
+])
+relisted = sheet('relisted.csv', ['Title', 'ebay link', 'Price', 'sell Date'], [
+    ['Charlotte\'s Web E.B. White first edition', 'https://www.ebay.com/itm/222222222222', '$500.00', '04/01/2024'],   # another copy, same day
+])
+odd = sheet('odd.csv', ['Title', 'Sold Price', 'Sale Date'], [['invısıble scarlet people 1st', '$95.00', 'Sep 9, 2025']])
 
 rows, version = refdata.load_prices([core, firsts, easton])
-check('a sale an earlier file holds loads once', ([f.get('already_loaded') for f in version['files']], len(rows)), ([None, 1, None], 9))
+check('a sale an earlier file holds loads once', ([f.get('already_loaded') for f in version['files']], len(rows)), ([None, 1, 1], 13))
+merged = next(r for r in rows if r['title'] == 'Fahrenheit 451 Ray Bradbury Easton Press' and r['price'] == 300)
+check('and takes on what the later file knows', (merged['condition'], merged['signed'], merged['publisher'], merged['image'][-5:]),
+      ('Sealed', True, 'Easton Press', '7.JPG'))
+rows2, _ = refdata.load_prices([listed, relisted])
+check('different eBay item numbers are different sales', len(rows2), 2)
 check('the same sale twice in one file stays twice', sum(1 for r in rows if 'wise blood' in r['text']), 2)
-check('image links and Easton columns are read', [(r['image'][-5:], r['condition'], r['signed'], r['publisher']) for r in rows if 'fahrenheit' in r['text']][:2],
+check('image links and Easton columns are read', [(r['image'][-5:], r['condition'], r['signed'], r['publisher']) for r in rows if r['image'][-5:] in ('3.JPG', '4.JPG')],
       [('3.JPG', 'Used', False, 'Easton Press'), ('4.JPG', 'Used', True, 'Easton Press')])
 
-ref = refdata.Reference(price_files=[core, firsts, easton])
-check('sealed and new sales are left out, as rules.json says', ([r['condition'] for r in ref.prices if 'fahrenheit' in r['text']],
-      ref.price_version.get('left_out_by_condition')), (['Used', 'Used'], 2))
+ref = refdata.Reference(price_files=[core, firsts, easton, odd])
+check('sealed and new sales are left out, as rules.json says (the merged sealed sale too)',
+      ([r['condition'] for r in ref.prices if 'easton press' in r['text']], ref.price_version.get('left_out_by_condition')), (['Used', 'Used'], 3))
 hits, _ = ref.comps('Ray Bradbury', 'Fahrenheit 451')
-kept, only_signed = rules.relevant_comps(hits, 'hardcover', signed_ok=False)
-check('a sale the Signed column marks is left out for an unsigned copy', [h['price'] for h in kept], [125.0])
-check('and counts for a signed one', sorted(h['price'] for h in rules.relevant_comps(hits, 'hardcover', signed_ok=True)[0]), [125.0, 300.0])
-check('and as a signed copy of the author', [r['price'] for r in ref.signed_comps('Ray Bradbury')], [300.0])
-check('not as an unsigned one', [r['price'] for r in ref.author_comps('Ray Bradbury')], [125.0])
+E = 'Easton Press'
+kept, only_signed = rules.relevant_comps(hits, 'hardcover', signed_ok=False, house=E)
+check('an Easton copy: a sale the Signed column marks is left out when unsigned', [h['price'] for h in kept], [125.0])
+check('and counts when signed', sorted(h['price'] for h in rules.relevant_comps(hits, 'hardcover', signed_ok=True, house=E)[0]), [125.0, 300.0])
+check('an ordinary copy is valued from no Easton sale', [h['price'] for h in rules.relevant_comps(hits, 'hardcover', signed_ok=False)[0]], [900.0])
+check('and the author\'s Easton sales count only for Easton copies', ([h['price'] for h in rules.same_house(ref.signed_comps('Ray Bradbury'), E)],
+      [h['price'] for h in rules.same_house(ref.author_comps('Ray Bradbury'), E)], [h['price'] for h in rules.same_house(ref.author_comps('Ray Bradbury'), None)]),
+      ([300.0], [125.0], [900.0]))
+check('whose copy is it', [rules.leather_house(t) for t in ('EASTON PRESS', 'The Franklin Library', 'Bret Easton Ellis', 'Benjamin Franklin', 'Knopf')],
+      ['Easton Press', 'Franklin Library', None, None, None])
 
 # the index finds what a full scan finds, apostrophes and accents included
 queries = [('Emily Brontë', 'Wuthering Heights'), ("Flannery O'Connor", 'Wise Blood'), ("Tim O'Brien", 'The Things They Carried'),
            ('Daphne du Maurier', "Don't Look Now"), ('', "Don't Look Now"), ('', 'The Things They Carried'), ('', 'Wuthering Heights'),
-           ('Ray Bradbury', 'Fahrenheit 451'), ('Nobody Atall', 'Nothing Here'), ('', '')]
+           ('Ray Bradbury', 'Fahrenheit 451'), ('Nobody Atall', 'Nothing Here'), ('', ''), ('', 'Invisible Scarlet People'),
+           ('Isaac Asımov', 'Foundation')]
 def results():
     return [([r['title'] for r in ref.comps(a, t, old=True)[0]], [r['title'] for r in ref.signed_comps(a)], [r['title'] for r in ref.author_comps(a)])
             for a, t in queries]
@@ -64,6 +88,7 @@ having, ref.having = ref.having, (lambda *texts: ref.prices)
 scanned = results()
 ref.having = having
 check('the index finds exactly what a full scan finds', indexed, scanned)
-check('and finds things', sum(1 for x in indexed if x[0]), 8)
+check('and finds things', sum(1 for x in indexed if x[0]), 9)
+check('including a listing spelled with a dotless ı, which the regex takes for i', len(indexed[10][0]), 2)
 check('a lookup reads only the sales holding its rarest word', len(ref.having('wuthering')), 1)
 sys.exit(1 if check.failed else 0)

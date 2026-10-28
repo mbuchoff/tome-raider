@@ -72,13 +72,34 @@ def links(author, title, imprint):
     }
 
 
+# leather-bound publishers whose sales value only their own copies: an Easton Press Fahrenheit 451 says nothing about a
+# Ballantine one, and the other way round
+LEATHER = {'Easton Press': re.compile(r'\beaston\b(?!\s+ellis)', re.I), 'Franklin Library': re.compile(r'\bfranklin\s+(library|mint)\b', re.I)}
+
+
+def leather_house(text):
+    """'Easton Press', 'Franklin Library' or None, from a copy's spine and imprint or a sale's listing title."""
+    return next((h for h, rx in LEATHER.items() if rx.search(text or '')), None)
+
+
+def house_of_sale(h):
+    return h.get('publisher') if h.get('publisher') in LEATHER else leather_house(h['title'])
+
+
+def same_house(sales, house):
+    """The sales from the copy's own publisher when it is Easton Press or Franklin Library, else none of theirs."""
+    return [h for h in sales if house_of_sale(h) == house]
+
+
 def is_signed(h):
     """A signed sale: its listing says so, or its file's Signed column does (Easton Press and Franklin Library)."""
     return bool(h.get('signed')) or bool(SIGNED_WORDS.search(h['title']))
 
 
-def relevant_comps(hits, fmt, signed_ok):
-    """Narrow sold listings to ones like this copy: same format, unsigned unless signatures count, no lots or reprints."""
+def relevant_comps(hits, fmt, signed_ok, house=None):
+    """Narrow sold listings to ones like this copy: the same leather publisher or none, same format, unsigned unless
+    signatures count, no lots or reprints."""
+    hits = same_house(hits, house)
     hits = [h for h in hits if not LOT_WORDS.search(h['title'])] or hits
     if fmt == 'paperback':
         hits = [h for h in hits if PAPERBACK_WORDS.search(h['title']) or PAPERBACK_HOUSES.search(h['title'])]
@@ -158,7 +179,8 @@ def assess(b, category, ref, minimum):
     # evidence from the reference data
     adaptation = ADAPTATION.search(' '.join([title, marks, b.get('spine_text') or '']))
     hits, author_known = ref.comps(author, title, old) if not adaptation else ([], bool(author))
-    comps, only_signed = relevant_comps(hits, fmt, signed_shelf or bool(re.search(r'\bsigned\b', marks, re.I)))
+    house = leather_house(' '.join([imprint, b.get('spine_text') or '', foot_text]))
+    comps, only_signed = relevant_comps(hits, fmt, signed_shelf or bool(re.search(r'\bsigned\b', marks, re.I)), house)
     if comps:
         out['value'] = median([h['price'] for h in comps])
         out['comps'] = sorted(comps, key=lambda h: -h['price'])[:4]
@@ -192,7 +214,7 @@ def assess(b, category, ref, minimum):
         return out
 
     # on shelves read in check order, an author with several sales in the price file is enough to list the book
-    ac = ref.author_comps(author) if check_order else []
+    ac = same_house(ref.author_comps(author), house) if check_order else []
     any_signal = bool(comps or freq or watch or ill or imp or mk or wl or len(ac) >= 3)
     # on rare shelves, an old book with no evidence in the price file can still be a lesser-known lead: an old book whose spine
     # shows illustrations, a translation or a small press, or on a rare shelf any antique. On shelves read in check order
@@ -236,7 +258,7 @@ def assess(b, category, ref, minimum):
     if check_order:
         # no minimum: every candidate is listed, ordered by the likeliest value the evidence gives
         st = [h for h in comps if is_signed(h)] if signed_copy else []
-        sc = ref.signed_comps(author) if signed_copy and not st else []
+        sc = same_house(ref.signed_comps(author), house) if signed_copy and not st else []
         if st: estimate(st, 'signed copies of this title')
         elif sc and (val is None or median([h['price'] for h in sc]) >= val): estimate(sc, 'signed copies by this author')
         elif comps:
