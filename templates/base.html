@@ -62,7 +62,7 @@ code { font-size: 0.9em; }
 dl { display: grid; grid-template-columns: max-content 1fr; gap: 2px 12px; margin: 8px 0 0; font-size: 0.925rem; }
 dt { color: var(--muted); } dd { margin: 0; }
 .links a { margin-right: 12px; white-space: nowrap; }
-.scroll { overflow-x: auto; }
+.scroll { overflow-x: auto; overflow-y: hidden; }      /* sideways only: an (i) button's tap area a pixel past the table mustn't add a vertical scrollbar */
 .fbb { background: transparent; color: var(--fg); border: 1px solid var(--line); padding: 6px 12px; font-weight: 500; margin-right: 6px; }
 .fbb.on[data-verdict=worth] { background: var(--ok); border-color: var(--ok); color: #fff; }
 .fbb.on[data-verdict=not], .fbb.on[data-verdict=should] { background: var(--accent); border-color: var(--accent); color: #fff; }
