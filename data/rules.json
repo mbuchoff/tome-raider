@@ -1,5 +1,6 @@
 {
- "version": "plan-v4 with POC tuning (2026-10-23, round 6: story collections, anthologies and omnibuses left out unless whitelisted)",
+ "version": "plan-v4 with POC tuning (2026-10-28, round 7: First Editions and Easton/Franklin sales added; sealed and new Easton/Franklin sales left out until the bookshop answers)",
+  "sold_conditions_left_out": ["Sealed", "New"],
  "minimum_value": {
   "thrift": 50,
   "cheap": 50,

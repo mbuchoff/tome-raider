@@ -72,6 +72,11 @@ def links(author, title, imprint):
     }
 
 
+def is_signed(h):
+    """A signed sale: its listing says so, or its file's Signed column does (Easton Press and Franklin Library)."""
+    return bool(h.get('signed')) or bool(SIGNED_WORDS.search(h['title']))
+
+
 def relevant_comps(hits, fmt, signed_ok):
     """Narrow sold listings to ones like this copy: same format, unsigned unless signatures count, no lots or reprints."""
     hits = [h for h in hits if not LOT_WORDS.search(h['title'])] or hits
@@ -80,9 +85,9 @@ def relevant_comps(hits, fmt, signed_ok):
     else:
         hc = [h for h in hits if not PAPERBACK_WORDS.search(h['title'])]
         hits = hc or hits
-    only_signed = bool(hits) and all(SIGNED_WORDS.search(h['title']) for h in hits)
+    only_signed = bool(hits) and all(is_signed(h) for h in hits)
     if not signed_ok:
-        hits = [h for h in hits if not SIGNED_WORDS.search(h['title'])]
+        hits = [h for h in hits if not is_signed(h)]
     return hits, only_signed
 
 
@@ -230,7 +235,7 @@ def assess(b, category, ref, minimum):
     val = out['value']
     if check_order:
         # no minimum: every candidate is listed, ordered by the likeliest value the evidence gives
-        st = [h for h in comps if SIGNED_WORDS.search(h['title'])] if signed_copy else []
+        st = [h for h in comps if is_signed(h)] if signed_copy else []
         sc = ref.signed_comps(author) if signed_copy and not st else []
         if st: estimate(st, 'signed copies of this title')
         elif sc and (val is None or median([h['price'] for h in sc]) >= val): estimate(sc, 'signed copies by this author')
