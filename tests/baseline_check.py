@@ -60,7 +60,7 @@ page = c.get(f'/captures/{cid}').data.decode()
 check('runs table: the current baseline reads "latest"', '<th>When (UTC)</th><th>Settings</th><th>Baseline (UTC)</th>' in page
       and '<td><span title="2026-10-23 21:29 UTC, commit ' + A['sha'] + '">latest</span> (<code class="small" title="' + A['sha'] + '">aaaaaaa</code>)</td>' in page, page[:0])
 spent, books = SPENT, SAMPLE['photos'][0]['books']
-check('the run header: one photo, and the cost of a book, no tooltip', f"spent on 1 photo ({100 * spent / books:.2f}¢ a book)" in page and 'class="tip"' not in page)
+check('the run header: one photo, and the cost of a book, no (i)', f'spent on <span class="nowrap">1 photo</span> ({100 * spent / books:.2f}¢ a book)' in page and 'class="info"' not in page)
 check('the run header gives its time and SHA, without UTC', '· baseline <span title="commit ' + A['sha'] + '">2026-10-23 21:29</span> (<code class="small" title="'
       + A['sha'] + '">aaaaaaa</code>)' in page)
 check('the scan page says "latest" too', '">latest</span> (<code class="small">aaaaaaa</code>)</td>' in c.get('/').data.decode())
@@ -108,16 +108,16 @@ r = c.post('/captures', data={'photos': [(io.BytesIO(b'left' * 500), 'a.jpg'), (
 cid2 = r.headers['Location'].split('/captures/')[1].split('?')[0]; run2 = wait(cid2)[0]
 page = c.get(f'/captures/{cid2}').data.decode()
 check('two photos read', run2['photos_read'] == 2 and run2['spines'] == 2 * books, run2)
-tip = 'title="Photo 1 (a.jpg): $0.25&#10;Photo 2 (b.jpg): $0.30"'
-check('the run header: each photo\'s cost on "2 photos"', f' spent on <span class="tip" {tip}>2 photos</span> ({100 * 0.55 / (2 * books):.2f}¢ a book)' in page,
-      page[page.find(' spent'):][:200])
-check('the runs table: the same tooltip on the total', f'<span class="tip" {tip}>$0.55</span>' in page)
+rows = '<tr><td>Photo 1</td><td class="muted">a.jpg</td><td>$0.25</td></tr><tr><td>Photo 2</td><td class="muted">b.jpg</td><td>$0.30</td></tr>'
+check('the run header: an (i) after "2 photos"', ' spent on <span class="nowrap">2 photos<details class="info"><summary aria-label="Cost of each photo">' in page
+      and f'{rows}</table></div></details></span> ({100 * 0.55 / (2 * books):.2f}¢ a book)' in page, page[page.find(' spent'):][:300])
+check('the runs table: an (i) after the total, with each photo\'s cost', '<td><span class="nowrap">$0.55<details class="info">' in page and page.count(rows) == 2)
 # an old run, from before photos_read, stopped after one of its two photos
 old = dict(run2, status='stopped', cost={k: v for k, v in run2['cost'].items() if k != 'photos'}); old.pop('photos_read')
 repo.save_run(store, old)
 res = repo.load_results(store, cid2, run2['id']); res['photos'] = res['photos'][:1]; store.put_json(repo.results_key(cid2, run2['id']), res)
 page = c.get(f'/captures/{cid2}').data.decode()
-check('an old run: one of two photos read, and only the average', ' spent on <span class="tip" title="About $0.55 a photo: this run kept only its total">1 of 2 photos</span> ('
-      in page, page[page.find(' spent'):][:200])
-check('and no tooltip in the table, where its results are not read', '<td>$0.55</td>' in page)
+check('an old run: one of two photos read, and only the average', ' spent on <span class="nowrap">1 of 2 photos<details class="info">' in page
+      and '<div class="pop">About $0.55 a photo: this run kept only its total</div></details></span> (' in page, page[page.find(' spent'):][:300])
+check('and no (i) in the table, where its results are not read', '<td><span class="nowrap">$0.55</span></td>' in page)
 sys.exit(1 if check.failed else 0)

@@ -28,7 +28,20 @@ input[type=text], input[type=password], input[type=number], select { width: 100%
 input[type=file] { width: 100%; padding: 10px 0; }
 .check { display: flex; gap: 8px; align-items: flex-start; font-weight: 400; }
 button, .button { display: inline-block; background: var(--accent); color: var(--accent-fg); border: 0; border-radius: 8px; padding: 11px 18px; font: inherit; font-weight: 600; cursor: pointer; text-decoration: none; }
-.tip { text-decoration: underline dotted; text-underline-offset: 3px; cursor: help; }
+.nowrap { white-space: nowrap; }
+.runline { margin: 1rem 0; }       /* a run's status line: a div, as it may hold (i) buttons, which can't sit in a <p> */
+details.info { display: inline-block; vertical-align: -0.2em; margin-left: 2px; }
+details.info > summary { list-style: none; display: inline-block; padding: 8px 6px; margin: -8px -6px; cursor: pointer; user-select: none; -webkit-tap-highlight-color: transparent; }
+details.info > summary::-webkit-details-marker { display: none; }
+details.info > summary > span { display: inline-grid; place-items: center; width: 1.2rem; height: 1.2rem; border: 1.5px solid var(--muted); border-radius: 50%;
+  color: var(--muted); font: italic 700 0.8rem/1 Georgia, "Times New Roman", serif; }
+details.info[open] > summary > span, details.info > summary:hover > span { border-color: var(--accent); color: var(--accent); }
+details.info > .pop { margin-top: 6px; background: var(--card); color: var(--fg); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.18); font-size: 0.875rem; font-weight: 400; text-align: left; white-space: nowrap; z-index: 20; }
+html.js details.info > .pop { position: fixed; margin: 0; }      /* placed by the script; without it the panel opens in line */
+details.info > .pop table { width: auto; font-size: inherit; margin-top: 4px; }
+details.info > div.pop > table td { border: 0; padding: 2px 12px 2px 0; font-weight: 400; background: transparent; }   /* over a selected row's bold */
+details.info > div.pop > table td:last-child { padding-right: 0; text-align: right; }
 button:disabled { opacity: 0.45; cursor: not-allowed; }
 button.secondary { background: transparent; color: var(--accent); border: 1px solid var(--accent); }
 table { width: 100%; border-collapse: collapse; font-size: 0.925rem; }
@@ -61,5 +74,26 @@ details summary { cursor: pointer; }
 <body>
 <header class="top"><a href="{{ url_for('index') if url_for is defined else '#' }}">Tome Raider</a><span class="muted small">proof of concept</span></header>
 <main>{% block body %}{% endblock %}</main>
+<script>
+// (i) buttons: the panel floats beside its button, above tables that scroll sideways, and one tap anywhere else closes it
+(() => {
+  document.documentElement.classList.add('js');
+  const all = () => document.querySelectorAll('details.info[open]');
+  const close = except => all().forEach(d => { if (d !== except) d.open = false; });
+  document.addEventListener('toggle', e => {
+    const d = e.target;
+    if (!(d instanceof HTMLDetailsElement) || !d.matches('details.info') || !d.open) return;
+    close(d);
+    const pop = d.querySelector('.pop'), r = d.querySelector('summary > span').getBoundingClientRect();
+    const w = pop.offsetWidth, h = pop.offsetHeight;
+    pop.style.left = Math.max(8, Math.min(r.left + r.width / 2 - w / 2, window.innerWidth - w - 8)) + 'px';
+    pop.style.top = (r.bottom + 6 + h <= window.innerHeight - 8 ? r.bottom + 6 : Math.max(8, r.top - h - 6)) + 'px';
+  }, true);
+  document.addEventListener('click', e => all().forEach(d => { if (!d.contains(e.target)) d.open = false; }));
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') close(); });
+  window.addEventListener('scroll', () => close(), true);
+  window.addEventListener('resize', () => close());
+})();
+</script>
 </body>
 </html>
