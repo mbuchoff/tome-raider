@@ -33,6 +33,9 @@ captures/<cid>/runs/<rid>/files/<name>                annotated photos and spine
 - `run.json`: `{"id", "capture_id", "created", "started", "finished", "status", "progress", "error", "cap", "cost",
   "baseline", "photos", "photos_read", "pulls", "leads", "spines", "unreadable"}`; `photos` are the settings the run used (runs from before
   they were kept fall back to the capture's). status: queued, running, done, failed, stopped.
+  `cost`: `{"cap", "spent", "calls", "cached_calls", "tokens", "photos": [{"spent", "calls", "cached_calls"}]}`, the photos in
+  order; `cap` is $2 a photo. Runs from before 27 October 2026 kept only the total, except the four multi-photo runs that spent
+  money, whose `photos` were split afterwards from the saved responses (marked `"photos_from"`).
 - `marks.json`: `{"<mark id>": {"verdict", "label", "category", "value", "at", "run_id", "book": {"photo", "shelf", "x0",
   "x1", "y0", "y1", "title", "author"}}}`. The mark id is made when the mark is first set; `book` is the book as the run that
   was shown read it (photo is 1-based), so the mark can be matched to the same book in other runs.
