@@ -47,6 +47,8 @@ core = sheet('core.csv', ['Title', 'Sale Price', 'Sale Date', 'Author'], [      
     ['The Second World War, Winston Churchill, 6 volume set, first editions', '$400.00', 'Sep 1, 2024', ''],
     ['Winston Churchill, The Second World War, all first editions 1948-54', '$800.00', 'Feb 1, 2026', ''],
     ["A Brief History of Children's Literature by Brian Doyle 1968", '$90.00', 'Jan 2, 2025', ''],
+    ['The Ring and the Book, Robert Browning, first edition, first printing', '$200.00', 'Aug 1, 2026', ''],
+    ['The Iliad, Homer, Franklin Library, leather', '$180.00', 'Feb 1, 2026', ''],
 ])
 easton = sheet('easton.csv', ['Title', 'Condition', 'Signed', 'Publisher', 'Sold Price', 'Sale Date'], [
     ['Fahrenheit 451 Ray Bradbury Easton Press 1990', 'Used', 'No', 'Easton Press', '$120.00', 'Apr 24, 2026'],
@@ -105,6 +107,16 @@ check('a quality hardcover dated 1950 is no 1760 edition: a lead to check, said 
       ('lead', None, 1))
 a = rules.assess(book("The Pilgrim's Progress", 'John Bunyan', look='antique', format='paperback'), 'rare', ref, 75)
 check('never a paperback', a['decision'] in ('lead', 'pull'), False)
+
+a = rules.assess(book('The Ring and the Book', 'Browning', imprint='?', notes={'first': '1868-69, Smith, Elder, London, 4 vols.', 'author': 'Robert Browning',
+                 'confidence': 'high'}), 'cheap', ref, 50)
+check("an undated first edition takes the notes' year: no 1868 value for an old copy", (a['value'], a['decision'] == 'pull'), (None, False))
+check('a lone surname is replaced by the author the notes identify', a.get('identified'), 'Robert Browning')
+a = rules.assess(book('The Iliad', 'Homer', imprint='Franklin Library', look='modern', notes={'author': 'Richmond Lattimore', 'confidence': 'high'}), 'cheap', ref, 50)
+check('but a single-name author like Homer is never replaced by a translator', (a.get('identified'), a['value']), (None, 180.0))
+
+a = rules.assess(book('World War II?', '?', notes={'author': '', 'confidence': 'low'}), 'cheap', ref, 50)
+check('an author read as "?" alone is no name, and no crash', a['decision'] in ('skip', 'not pulled'))
 
 # one signature reminder, from the signed sales
 a = rules.assess(book('Fahrenheit 451', 'Ray Bradbury', imprint='Easton Press', look='modern'), 'cheap', ref, 50)

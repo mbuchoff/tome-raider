@@ -173,7 +173,9 @@ def assess(b, category, ref, minimum):
     notes = b.get('notes') or {}
     out['checks'] = []          # check lines written once per book: a possible signature, a possible first edition, a partial set
     # a second look for a book with no author, or only one name (a surname or a publisher): the notes call identifies it
-    if (not author or len(name_words(author)) < 2) and clean(notes.get('author')) and notes.get('confidence') in ('high', 'medium'):
+    nw = name_words(author)              # "?" or "(Cervantes?)" can leave no name at all
+    lone = len(nw) < 2 and not (nw and nw[0].lower().strip('.').replace('ë', 'e') in ref.single_names)
+    if (not author or lone) and clean(notes.get('author')) and notes.get('confidence') in ('high', 'medium'):
         author = clean(notes['author'])
         out['identified'] = author
         out['signals'].append(f'author identified by the notes as {author}')
@@ -238,14 +240,18 @@ def assess(b, category, ref, minimum):
     pub = same_imprint(imprint, notes)
     firsts = [h for h in comps if FIRST_EDITION_SALE.search(h['title'])]
     costly = bool(firsts) and median([h['price'] for h in firsts]) >= VALUABLE_FIRST and not (shows_first or (pub and year))
+    first_year = min((int(y) for y in re.findall(r'(?<!\d)(1[5-9]\d\d|20[0-2]\d)(?!\d)', notes.get('first') or '')), default=None)
     def other_edition(h):
         if h.get('year') and not lo <= h['year'] <= hi: return True
-        if FIRST_EDITION_SALE.search(h['title']): return pub is False or costly
+        if FIRST_EDITION_SALE.search(h['title']):
+            if not h.get('year') and first_year and not lo <= first_year <= hi: return True     # an undated first: the notes' year
+            return pub is False or costly
         return False
     # partial sets: single volumes value a volume; where the title sold only as whole sets, the copy is still listed, with
     # the sets' price as a ceiling it won't reach (the bookshop: "worth much less than a complete set")
     whole_sets = [h for h in comps if SET_LISTING.search(h['title'])]
-    if whole_sets and len(whole_sets) < len(comps): comps = [h for h in comps if not SET_LISTING.search(h['title'])]
+    only_sets = bool(whole_sets) and len(whole_sets) == len(comps)
+    if whole_sets and not only_sets: comps = [h for h in comps if not SET_LISTING.search(h['title'])]
     elif whole_sets:
         out['checks'].append(f"Complete sets sold for a median of {fmt_money(median([h['price'] for h in whole_sets]))}; a partial set is worth much less")
     elsewhere = [h for h in comps if other_edition(h)]
@@ -253,7 +259,7 @@ def assess(b, category, ref, minimum):
     if comps:
         out['value'] = median([h['price'] for h in comps])
         out['comps'] = sorted(comps, key=lambda h: -h['price'])[:4]
-        out['basis'] = 'complete sets of this title' if whole_sets and len(whole_sets) == len(comps) else 'sales of this title'
+        out['basis'] = 'complete sets of this title' if only_sets else 'sales of this title'
         sig.append(f"{len(comps)} sale{'s' if len(comps) != 1 else ''} of this title" + (' by this author' if author_known else '')
                    + (f", median {fmt_money(out['value'])}" if len(comps) > 1 else f" at {fmt_money(out['value'])}"))
     elif only_signed and hits:
