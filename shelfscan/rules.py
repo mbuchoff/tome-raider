@@ -13,10 +13,14 @@ PAPERBACK_HOUSES = re.compile(r'\b(signet|ace|bantam|dell|pocket books|pyramid|l
                               r'belmont|monarch|beacon|corgi|panther|ballantine|penguin|phantom|falcon)\b', re.I)
 # a sentence of the notes about signed copies: the bookshop wants one signature line, from the sales, and no other
 SIGNED_MENTION = re.compile(r"\bsigned\b|\binscribed\b|autograph|author'?s signature", re.I)
-# (the First Edition Library, "FEL", prints facsimiles of first editions)
-LOT_WORDS = re.compile(r'\blot of\b|\blot\b \d|\bset of\b|facsimile|reprint|book club|\bbce\b|first editions? library|\bfel\b', re.I)
+LOT_WORDS = re.compile(r'\blot of\b|\blot\b \d|\bset of\b|facsimile|reprint|book club|\bbce\b', re.I)
 # a listing of several different books ("4 Franklin Library Leather Paine ... Prentiss Plays ..."): its price is no one book's
 MULTI_BOOK = re.compile(r'\blot of\b|\blot\b \d|^\W*(?:[2-9]|[1-4]\d)\s+(?:franklin|easton|folio|heritage)\b', re.I)
+# the same, worded "3 Books" or "Easton bundle", where it doesn't read as a set of one work (the set rules handle those)
+BUNDLE = re.compile(r'\bbundle\b|\b(?:[2-9]|[12]\d)[\s-]+(?:different\s+)?(?:books?|novels|titles|hardcovers)\b(?!\s+in\s+(?:1|one)\b)', re.I)
+# the First Edition Library ("FEL") prints facsimiles of first editions: its price is no real copy's, even with no other
+# sale; "FAC/FEL dust jacket" is a real copy in a facsimile jacket
+FACSIMILE_LIBRARY = re.compile(r'first editions? lib(?:rary)?\b|\bfel\b(?!\s*(?:dust\s*)?(?:jacket|dj|d/j)\b)', re.I)
 # a copy whose spine states a later edition or printing ("6th Edition"): first-edition sales say nothing about it
 LATER_EDITION = re.compile(r'\b(?:[2-9](?:nd|rd|th)|[1-9]\d(?:st|nd|rd|th)|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|later)'
                            r'\s+(?:edition|printing|impression)\b', re.I)
@@ -70,6 +74,15 @@ def spine_year(spine_text, title=''):
     years = [roman(m) for m in ROMAN_YEAR.findall(s) if len(m) >= 4] + [int(y) for y in ARABIC_YEAR.findall(s)]
     years = [y for y in years if 1450 <= y <= 2030 and str(y) not in (title or '')]
     return max(years) if years else None
+
+
+def listing_year(listing, title=''):
+    """The earliest year a sold listing names, back to the first printed books (a listing's own year leaves out the 1400s).
+    A limitation number ('#1440', '804/1400'), a span ('1478-1978'), a century ('1400s') or a year in the copy's own title
+    ('1776') is no printing date."""
+    s = re.sub(r'(?<!\d)1[4-9]\d\d\s*[-–—/]\s*\d{2,4}(?!\d)|[#/]\s*\d+', ' ', listing or '')
+    years = [y for y in re.findall(r'(?<!\d)(1[4-9]\d\d|20[0-2]\d)(?![\ds])', s) if y not in (title or '')]
+    return int(min(years)) if years else None
 
 
 def clean(s):
@@ -173,10 +186,14 @@ def without_signatures(notes):
     return out
 
 
+def several_books(listing):
+    return bool(MULTI_BOOK.search(listing) or (BUNDLE.search(listing) and not SET_LISTING.search(listing)))
+
+
 def relevant_comps(hits, fmt, signed_ok, house=None):
     """Narrow sold listings to ones like this copy: the same leather publisher or none, same format, unsigned unless
     signatures count, no lots or reprints. Sales from the paperback and book-club list are of their kind whatever they say."""
-    hits = [h for h in same_house(hits, house) if not MULTI_BOOK.search(h['title'])]
+    hits = [h for h in same_house(hits, house) if not several_books(h['title']) and not FACSIMILE_LIBRARY.search(h['title'])]
     hits = [h for h in hits if h.get('kind') or not LOT_WORDS.search(h['title'])] or hits
     if fmt == 'paperback':
         hits = [h for h in hits if h.get('kind') == 'paperback' or PAPERBACK_WORDS.search(h['title']) or PAPERBACK_HOUSES.search(h['title'])]
@@ -299,6 +316,13 @@ def assess(b, category, ref, minimum):
 
     # other editions: a sale dated outside the copy's own years, a first edition from another publisher than the copy's, or
     # a valuable first-edition sale ($500 and up) with nothing on the copy to say it is one, values a later printing at nothing
+    first_year = min((int(y) for y in re.findall(r'(?<!\d)(1[5-9]\d\d|20[0-2]\d)(?!\d)', notes.get('first') or '')), default=None)
+    # a sale dated long before the work was first published is another book with its title (a leaf of a 15th-century
+    # book for a 20th-century novel): the bookshop, "year on sold listing should have told you it was a different book"
+    older = [h for h in comps if first_year and (listing_year(h['title'], title) or 9999) < first_year - 10]
+    if older:
+        comps = [h for h in comps if h not in older]
+        sig.append(f"first published {first_year}, so {len(older)} sale{'s' if len(older) != 1 else ''} dated long before then left out")
     printed = b.get('printed') if not year else None
     modern = MODERN_MARK.search(' '.join([b.get('spine_text') or '', marks, foot_text]))
     lo, hi = era(look, year, printed, bool(modern))
@@ -306,19 +330,21 @@ def assess(b, category, ref, minimum):
     # own years known, a title whose sales are dated is valued only from sales dated to those years: an undated "deluxe
     # vellum" listing says nothing about a plain 1930s reprint
     out_of_years = [h for h in comps if h.get('year') and not lo <= h['year'] <= hi]
-    own_years = bool(printed and printed.get('from')) or bool(modern)
+    own_years = bool(year) or bool(printed and printed.get('from')) or bool(modern)
     undated_out = [h for h in comps if not h.get('year')] if own_years and any(h.get('year') for h in comps) else []
     if own_years and (out_of_years or undated_out):
-        when = (f"{printed['from']}" + (f"–{printed['to']}" if printed['to'] != printed['from'] else '')) if printed and printed.get('from') else '1966 or later'
-        why = clean(printed.get('clues')) if printed and printed.get('from') else f'{modern.group(0)} on the spine'
         n = len(out_of_years) + len(undated_out)
-        sig.append(f"looks printed {when}{f' ({why})' if why else ''}, so {n} sale{'s' if n != 1 else ''} not dated to those years left out")
+        left = f"{n} sale{'s' if n != 1 else ''} not dated to those years left out"
+        if year: sig.append(f'the spine says {year}, so {left}')
+        else:
+            when = (f"{printed['from']}" + (f"–{printed['to']}" if printed['to'] != printed['from'] else '')) if printed and printed.get('from') else '1966 or later'
+            why = clean(printed.get('clues')) if printed and printed.get('from') else f'{modern.group(0)} on the spine'
+            sig.append(f"looks printed {when}{f' ({why})' if why else ''}, so {left}")
     shows_first = bool(FIRST_EDITION_SALE.search(marks))
     # a Modern Library, Folio or Easton copy is valued only from its own publisher's sales: their "1st edition" is that
     # publisher's first printing, never the work's first edition from another house
     pub = same_imprint(imprint, notes) if house in (None, ANY_LEATHER) else True
     evidence = shows_first or bool(pub and year)        # something on the copy says it may be the first edition
-    first_year = min((int(y) for y in re.findall(r'(?<!\d)(1[5-9]\d\d|20[0-2]\d)(?!\d)', notes.get('first') or '')), default=None)
     def other_edition(h):
         if h.get('year') and not lo <= h['year'] <= hi: return True
         if undated_out and not h.get('year'): return True
