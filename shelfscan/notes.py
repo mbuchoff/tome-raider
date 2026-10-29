@@ -18,15 +18,22 @@ For each book:
   (e.g. "1932, Chatto & Windus, London; US: Doubleday, Doran, 1932").
 - points: how to tell the first printing or the valuable issue: issue points, binding or jacket details, the first
   jacket price, number line or printing statement, limitation, the illustrator's first appearance, and any famous flag
-  or error. Mention a signed or limited issue if one exists.
+  or error. Mention a limited issue if one exists, but not signatures: the app adds its own signature reminder from sales.
 - watch: lookalikes worth much less, if any: book-club editions, later printings, facsimiles, reprints.
 - form: novel, story collection, anthology, omnibus, poetry, essays, nonfiction or other. A story collection is one
   author's short stories or novellas in one volume; an anthology has several authors; an omnibus is several novels in one.
+- author: the author's full name as you identify the book (the editor or translator for an anthology or a translation),
+  even when the spine gave only a surname, a publisher or nothing. Empty if you can't identify the book.
+- publisher: this copy's publisher or series as the spine reading shows it (Modern Library, Everyman's Library and Folio
+  Society count), else empty. Not the first edition's publisher unless the spine shows it.
+- about: if the book is about a person (a biography, criticism, a study or a bibliography), that person's full name;
+  else empty. Mark Schorer's "Sinclair Lewis" is about Sinclair Lewis.
 - confidence: high, medium or low, for how sure you are of these facts.
 If you can't identify the book from what was read, say so in first and leave points and watch empty. Never invent a point
 or a publisher: an empty field is better than a wrong one. Keep each field under 40 words.
 
-Reply with JSON only: {"books": [{"n": 1, "first": "...", "points": "...", "watch": "...", "form": "novel", "confidence": "high"}]}
+Reply with JSON only: {"books": [{"n": 1, "first": "...", "points": "...", "watch": "...", "form": "novel", "author": "...",
+"publisher": "", "about": "", "confidence": "high"}]}
 
 Books:
 """
@@ -47,7 +54,8 @@ def describe(n, item):
 
 
 def add_notes(claude, items, budget, model=OPUS):
-    """Writes item['assessment']['notes'] = {first, points, watch, confidence} for each item it can. Returns how many."""
+    """Writes item['assessment']['notes'] = {first, points, watch, form, author, publisher, about, confidence} for each item it
+    can, also kept on the book so the rules can use it (who wrote it, whose book it's about, the copy's publisher). Returns how many."""
     todo = [x for x in items if clean(x['book'].get('title')) and 'notes' not in x['assessment'] and 'notes' not in x['book']][:MAX_BOOKS]
     if not todo: return 0
     for x in todo: x['book']['notes_tried'] = True        # from here the price-file list of collections may decide alone
@@ -60,9 +68,10 @@ def add_notes(claude, items, budget, model=OPUS):
     for r in books:
         try: x = todo[int(r['n']) - 1]
         except (KeyError, ValueError, IndexError, TypeError): continue
-        note = {k: str(r.get(k) or '').strip() for k in ('first', 'points', 'watch', 'form', 'confidence')}
+        note = {k: str(r.get(k) or '').strip() for k in ('first', 'points', 'watch', 'form', 'author', 'publisher', 'about', 'confidence')}
+        note['confidence'] = note['confidence'].lower()
         if note['form']: x['book']['form'] = note['form'].lower()
-        if note['first'] or note['points']:
+        if note['first'] or note['points'] or note['author'] or note['about']:
             x['assessment']['notes'] = x['book']['notes'] = note
             done += 1
     return done

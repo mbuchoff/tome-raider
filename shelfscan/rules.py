@@ -4,7 +4,7 @@ Each book gets a decision ('pull', 'not pulled', or 'skip' for books left out si
 value from the price file when there is one, and the text for the results page."""
 import difflib, re
 from urllib.parse import quote_plus
-from .refdata import median, surnames, words
+from .refdata import median, name_words, same_person, surnames, tokens, words
 
 CATEGORIES = {'thrift': 'Thrift store', 'cheap': 'Cheap bookshop', 'rare': 'Rare bookshop', 'extreme': 'Extremely rare', 'signed': 'Signed shelf'}
 PAPERBACK_WORDS = re.compile(r'paperback|\bpb\b|\bpbo\b|mass market|softcover|soft cover|digest', re.I)
@@ -17,6 +17,13 @@ LOT_WORDS = re.compile(r'\blot of\b|\blot\b \d|\bset of\b|facsimile|reprint|book
 ADAPTATION = re.compile(r'for boys and girls|\bretold\b|\babridged\b|adapted (for|by)|junior library|classics illustrated|'
                         r'told to the children|\bsimplified\b|for young readers|children\'s edition', re.I)
 FIRST_EDITION_MARK = re.compile(r'first edition|1st edition|first printing', re.I)
+# a sale claiming the first edition: what a later printing must not be valued from (the bookshop, 28 October 2026)
+FIRST_EDITION_SALE = re.compile(r'first (?:american |english |uk |us |trade )?edition|1st (?:american |english |uk |us )?ed|first printing|1st printing|1st/1st|first impression', re.I)
+# a listing of a whole set, where the copy on the shelf is usually one volume or a few
+SET_LISTING = re.compile(r'\b(?:\d+|two|three|four|five|six|seven|eight|nine|ten|twelve)[\s-]*(?:vol(?:ume)?s?\b|v\b|book set)|\bcomplete set\b|'
+                         r'\bset\b|\ball (?:first editions|volumes)\b|\bvols\b', re.I)
+VISIBLY_LEATHER = re.compile(r'\bleather', re.I)
+VALUABLE_FIRST = 500        # first editions selling this high are never a later printing's value without evidence on the copy
 # signs on an old spine that it may be a special copy, for lesser-known leads: illustrations, translations, small presses
 LEAD_CUE = re.compile(r'illustrat|pictured by|plates|drawings|engrav|woodcut|decorations by|translated|\bpress\b|society|'
                       r'privately|limited|pictorial', re.I)
@@ -86,9 +93,36 @@ def house_of_sale(h):
     return h.get('publisher') if h.get('publisher') in LEATHER else leather_house(h['title'])
 
 
+ANY_LEATHER = 'leather'      # a copy that is visibly leatherbound but names no publisher
+
+
 def same_house(sales, house):
-    """The sales from the copy's own publisher when it is Easton Press or Franklin Library, else none of theirs."""
+    """The sales from the copy's own publisher when it is Easton Press or Franklin Library, none of theirs for an ordinary
+    copy, and any for a copy that is visibly leatherbound but names no publisher."""
+    if house == ANY_LEATHER: return list(sales)
     return [h for h in sales if house_of_sale(h) == house]
+
+
+def era(look, year):
+    """The years a copy's own edition could carry, from a date on its spine or the look the reader gave it."""
+    if year: return year - 5, year + 5
+    return {'antique': (1450, 1930), 'old': (1915, 1975), 'modern': (1960, 2100)}.get(look, (1450, 2100))
+
+
+def first_publishers(notes):
+    """The words naming the first edition's publishers in the notes ('1932, Chatto & Windus, London; US: Doubleday'):
+    cities, years and little words left out."""
+    t = re.sub(r'\b(london|new york|boston|philadelphia|paris|chicago|edinburgh|toronto|garden city|indianapolis|us|uk)\b', ' ',
+               (notes or {}).get('first') or '', flags=re.I)
+    return {w for w in tokens(t) if len(w) > 2 and not w.isdigit() and w not in ('and', 'the', 'company', 'press', 'publishers', 'inc', 'ltd', 'sons')}
+
+
+def same_imprint(imprint, notes):
+    """None when the copy's publisher or the first edition's is unknown; else whether they share a name ('Knopf')."""
+    have = {w for w in tokens(imprint) if len(w) > 2 and w not in ('the', 'and', 'company', 'press', 'publishers', 'inc', 'ltd', 'sons', 'books')}
+    first = first_publishers(notes)
+    if not have or not first: return None
+    return bool(have & first)
 
 
 def is_signed(h):
@@ -136,6 +170,14 @@ def assess(b, category, ref, minimum):
     text = ' '.join([author, title, imprint, marks, b.get('spine_text') or '', b.get('appearance') or '', foot_text])
     out = dict(decision='skip', reason='', signals=[], value=None, comps=[], quick=[], why='', edition='', basis='', strength=0)
     if b.get('notes'): out['notes'] = b['notes']                 # written once by the notes call, kept with the reading
+    notes = b.get('notes') or {}
+    out['checks'] = []          # check lines written once per book: a possible signature, a possible first edition, a partial set
+    # a second look for a book with no author, or only one name (a surname or a publisher): the notes call identifies it
+    if (not author or len(name_words(author)) < 2) and clean(notes.get('author')) and notes.get('confidence') in ('high', 'medium'):
+        author = clean(notes['author'])
+        out['identified'] = author
+        out['signals'].append(f'author identified by the notes as {author}')
+    if (not imprint or '?' in imprint) and clean(notes.get('publisher')): imprint = clean(notes['publisher'])
     if unreadable(b):
         if category == 'rare' and look == 'antique' and b.get('legibility') != 'unreadable':
             out['decision'], out['reason'] = 'not pulled', 'title unreadable; an antique on a rare shelf, so check it in person'
@@ -176,19 +218,53 @@ def assess(b, category, ref, minimum):
         out['quick'].append(f"Is it the {out['edition']}?")
         if e.get('note'): out['quick'].append(e['note'])
 
+    # a book about a person, by someone else (Mark Schorer's Sinclair Lewis): valued only from sales of the book itself
+    subject = clean(notes.get('about')) or (title if ref.is_author_name(title) else '')
+    about = bool(subject) and not (author and same_person(subject, author, ref.single_names))
+    if about: sig.append(f'about {subject}, so valued only from its own sales')
+
     # evidence from the reference data
     adaptation = ADAPTATION.search(' '.join([title, marks, b.get('spine_text') or '']))
-    hits, author_known = ref.comps(author, title, old) if not adaptation else ([], bool(author))
+    hits, author_known = ref.comps(author, title, old, about=about) if not adaptation else ([], bool(author))
     house = leather_house(' '.join([imprint, b.get('spine_text') or '', foot_text]))
-    comps, only_signed = relevant_comps(hits, fmt, signed_shelf or bool(re.search(r'\bsigned\b', marks, re.I)), house)
+    if not house and VISIBLY_LEATHER.search(' '.join([marks, b.get('appearance') or ''])): house = ANY_LEATHER
+    signed_ok = signed_shelf or bool(re.search(r'\bsigned\b', marks, re.I))
+    comps, only_signed = relevant_comps(hits, fmt, signed_ok, house)
+
+    # other editions: a sale dated outside the copy's own years, a first edition from another publisher than the copy's, or
+    # a valuable first edition ($500 and up) with nothing on the copy to say it is one, values a later printing at nothing
+    lo, hi = era(look, year)
+    shows_first = bool(re.search(r'first edition|1st edition|first printing|1st printing', marks, re.I))
+    pub = same_imprint(imprint, notes)
+    firsts = [h for h in comps if FIRST_EDITION_SALE.search(h['title'])]
+    costly = bool(firsts) and median([h['price'] for h in firsts]) >= VALUABLE_FIRST and not (shows_first or (pub and year))
+    def other_edition(h):
+        if h.get('year') and not lo <= h['year'] <= hi: return True
+        if FIRST_EDITION_SALE.search(h['title']): return pub is False or costly
+        return False
+    # partial sets: single volumes value a volume; where the title sold only as whole sets, the copy is still listed, with
+    # the sets' price as a ceiling it won't reach (the bookshop: "worth much less than a complete set")
+    whole_sets = [h for h in comps if SET_LISTING.search(h['title'])]
+    if whole_sets and len(whole_sets) < len(comps): comps = [h for h in comps if not SET_LISTING.search(h['title'])]
+    elif whole_sets:
+        out['checks'].append(f"Complete sets sold for a median of {fmt_money(median([h['price'] for h in whole_sets]))}; a partial set is worth much less")
+    elsewhere = [h for h in comps if other_edition(h)]
+    comps = [h for h in comps if not other_edition(h)]
     if comps:
         out['value'] = median([h['price'] for h in comps])
         out['comps'] = sorted(comps, key=lambda h: -h['price'])[:4]
-        out['basis'] = 'sales of this title'
+        out['basis'] = 'complete sets of this title' if whole_sets and len(whole_sets) == len(comps) else 'sales of this title'
         sig.append(f"{len(comps)} sale{'s' if len(comps) != 1 else ''} of this title" + (' by this author' if author_known else '')
                    + (f", median {fmt_money(out['value'])}" if len(comps) > 1 else f" at {fmt_money(out['value'])}"))
     elif only_signed and hits:
         sig.append('title sells only when signed')
+    signed_copy = signed_shelf or (check_order and bool(sticker))
+    # a signature can't be seen on a spine: say once what signed copies fetch, when they fetch much more (the bookshop's choice)
+    signed = [h for h in same_house(hits, house) if is_signed(h) and not LOT_WORDS.search(h['title']) and not other_edition(h)]
+    if signed and not signed_copy and not signed_ok:
+        ms = median([h['price'] for h in signed])
+        if out['value'] is None or ms >= 1.5 * out['value']:
+            out['checks'].append(f'Check for a signature: signed copies sold for a median of {fmt_money(ms)}')
     freq = ref.find_frequent(author)
     if freq: sig.append(f'frequent author in the sales ({freq[0]})')
     watch = ref.find_watch(author)
@@ -222,6 +298,16 @@ def assess(b, category, ref, minimum):
     cue = LEAD_CUE.search(text) if old else None
     lead_only = (not any_signal and not signed_shelf and category in RARE_SHELVES and bool(title)
                  and (bool(cue) or (look == 'antique' and not check_order)))
+    # a copy of a title whose other editions sell is listed to check: on rare and antique shelves any hardcover, elsewhere
+    # only a quality one (the bookshop: "only hardcover reprints of high quality or collectors editions", never paperbacks)
+    first_check = (not comps and bool(elsewhere) and fmt != 'paperback' and not about
+                   and (hard or house is not None or category in RARE_SHELVES or check_order)
+                   and median([h['price'] for h in elsewhere]) >= minimum)
+    if first_check:
+        out['checks'].append(f"Other editions sold for a median of {fmt_money(median([h['price'] for h in elsewhere]))}: check whether this is one"
+                             + (f" (first edition: {notes['first']})" if clean(notes.get('first')) else ''))
+        if not check_order: lead_only = True
+        any_signal = True
     if not any_signal and not signed_shelf and not lead_only:
         out['reason'] = 'no signal'
         return out
@@ -239,7 +325,6 @@ def assess(b, category, ref, minimum):
         return no('modern decorative leather reprint')
     if adaptation and not (ill or imp or mk):
         return no('retold or abridged edition, without an illustrator or collectible publisher')
-    signed_copy = signed_shelf or (check_order and bool(sticker))
     if ref.rx['false_friend_authors'].search(author + ' ' + title) and not signed_copy and (lead_only or (not (matched and old) and not (look == 'antique' and hard))):
         return no('common author whose old copies are usually ordinary')
     if re.search(r'ex-?lib|library (label|stamp|sticker|mark)', marks, re.I):
@@ -264,8 +349,8 @@ def assess(b, category, ref, minimum):
         elif comps:
             if signed_copy: out['basis'] = 'unsigned copies of this title; a signature adds to it'
         elif len(ac) >= 3: estimate(ac, "this author's other books (a rough guide)", rough=True)
-        if only_signed and not signed_copy: out['quick'].insert(0, 'This title sells high only when signed')
         ok = True
+    elif first_check: ok = True                 # a possible first edition or collectable printing: a lead to check
     elif val is not None and val < minimum and not wl:
         return no(f'matching sales median {fmt_money(val)}, under the {fmt_money(minimum)} minimum')
     elif only_signed and not comps and not (old and hard) and not wl:

@@ -78,9 +78,12 @@ def run(job_dir, claude, now=time.time, on_progress=None):
         if reader.check_feet(claude, im, [c['book'] for x in pulls + leads for c in [x] + x['copies']], budget):
             pulls, leads, not_pulled, skipped = rules.evaluate(books, shelf_category, ref, minimum_for)
         progress(k, 'writing notes on the candidates')
-        try: notes.add_notes(claude, pulls + leads, budget)
-        except Exception as e: print(f'photo {k}: no notes ({type(e).__name__}: {e})', flush=True)     # the notes are extra; keep the results
-        if any(ref.collections.kind(x['book'])[0] for x in pulls + leads):        # collections the notes (or the price file) recognised
+        try: written = notes.add_notes(claude, pulls + leads, budget)
+        except Exception as e:                  # the notes are extra; keep the results
+            written = 0
+            print(f'photo {k}: no notes ({type(e).__name__}: {e})', flush=True)
+        # what the notes found (the author, who a book is about, the copy's publisher, a collection) can change a decision
+        if written or any(ref.collections.kind(x['book'])[0] for x in pulls + leads):
             pulls, leads, not_pulled, skipped = rules.evaluate(books, shelf_category, ref, minimum_for)
         stem = f'photo{k}'
         # spines nothing could be read from get a '?' box, drawn first so the numbered boxes sit on top

@@ -24,7 +24,7 @@
       {% if a.notes %}<dt>First edition</dt><dd>{{ a.notes.first }}{% if a.notes.confidence %} <span class="muted small">(Claude's notes, {{ a.notes.confidence }} confidence)</span>{% endif %}</dd>
       {% if a.notes.points %}<dt>Points</dt><dd>{{ a.notes.points }}</dd>{% endif %}
       {% if a.notes.watch %}<dt>Watch for</dt><dd>{{ a.notes.watch }}</dd>{% endif %}{% endif %}
-      {% if a.quick %}<dt>Check</dt><dd>{{ a.quick|join('. ') }}</dd>{% endif %}
+      {% set checks = (a.checks or []) + a.quick %}{% if checks %}<dt>Check</dt><dd>{{ checks|join('. ') }}</dd>{% endif %}
       {% if copies %}<dt>Other copies</dt><dd>The copy above looks the most promising. Check these too:
         {% for c in copies %}<div class="copy small">{% if c.thumb %}<a href="{{ file_url(c.thumb) }}"><img src="{{ file_url(c.thumb) }}" alt="Spine of another copy of {{ x.label }}"></a>{% endif %}
           <span>{{ where(c.book) }}: {{ look_for(c.book) }}; {{ c.book.look }}{% if c.assessment.value and c.assessment.value != a.value %}; about ${{ '{:,.0f}'.format(c.assessment.value) }}{% endif %}</span></div>{% endfor %}</dd>{% endif %}
@@ -105,7 +105,8 @@
   <tr><td><span class="badge">{{ x.n }}</span></td><td>{{ x.label }}{% if x.copies %} <span class="muted small">· {{ x.copies|length + 1 }} copies</span>{% endif %}
     <div class="small muted">Shelf {{ x.book.shelf }}, {{ ordinal(x.book.pos) }} from the left</div></td>
     <td>{% if a.value %}about ${{ '{:,.0f}'.format(a.value) }}{% if a.basis and 'rough' in a.basis %} <span class="muted small">(rough)</span>{% endif %}{% else %}<span class="muted">no price data</span>{% endif %}</td>
-    <td class="small">{% if a.notes %}{{ a.notes.first }}{% if a.notes.points %}<br>{{ a.notes.points }}{% endif %}{% elif a.quick %}{{ a.quick[0] }}{% endif %}</td></tr>
+    <td class="small">{% if a.notes and a.notes.first %}{{ a.notes.first }}{% if a.notes.points %}<br>{{ a.notes.points }}{% endif %}{% elif a.quick and not a.checks %}{{ a.quick[0] }}{% endif %}
+      {%- for c in a.checks or [] %}<div><b>{{ c }}</b></div>{% endfor %}</td></tr>
   {% endfor %}
 </table></div>
 {% else %}<p class="muted">No book on these shelves showed a sign of value.</p>{% endif %}

@@ -1,6 +1,7 @@
 {
- "version": "plan-v4 with POC tuning (2026-10-28, round 7: First Editions and Easton/Franklin sales added; sealed and new Easton/Franklin sales left out until the bookshop answers)",
+ "version": "plan-v4 with POC tuning (2026-10-29, round 8: the bookshop's answers of 28 October: whole author names, books about a person, titles identified before they are matched, first editions only for that edition, one signature line, partial sets noted)",
   "sold_conditions_left_out": ["Sealed", "New"],
+  "single_name_authors": ["Homer", "Virgil", "Vergil", "Ovid", "Horace", "Plato", "Aristotle", "Sophocles", "Euripides", "Aeschylus", "Aristophanes", "Herodotus", "Thucydides", "Xenophon", "Plutarch", "Tacitus", "Livy", "Cicero", "Seneca", "Lucretius", "Catullus", "Juvenal", "Petronius", "Apuleius", "Boethius", "Sappho", "Aesop", "Confucius", "Dante", "Petrarch", "Boccaccio", "Rumi", "Hafiz", "Voltaire", "Molière", "Moliere", "Colette", "Saki", "Stendhal", "Novalis", "Brontë", "Bronte", "Seuss"],
  "minimum_value": {
   "thrift": 50,
   "cheap": 50,
