@@ -30,9 +30,12 @@ LIMITED_MARK = re.compile(r"\blimited\b|\bnumbered\b|(?<!-)(?<!\w )\blettered\b"
 ADAPTATION = re.compile(r'for boys and girls|\bretold\b|\babridged\b|adapted (for|by)|junior library|classics illustrated|'
                         r'told to the children|\bsimplified\b|for young readers|children\'s edition', re.I)
 FIRST_EDITION_MARK = re.compile(r'first edition|1st edition|first printing', re.I)
-# a sale claiming the first edition: what a later printing must not be valued from (the bookshop, 28 October 2026)
-FIRST_EDITION_SALE = re.compile(r'\b(?:first|1st)\s+(?:(?:true|stated|american|english|british|uk|u\.?s\.?|trade|retail|hardcover|hardback)\s+){0,2}'
-                                r'(?:edition|eds?\b|printing|print\b|impression)|1st/1st', re.I)
+# a sale claiming the first edition: what a later printing must not be valued from (the bookshop, 28 October 2026). Also a
+# reissue's own first ("First (1st) Harrow Press Edition"): no first of the work, and from another publisher than the
+# copy's, another edition; a first book-club edition is a book-club copy, for the book-club rules
+FIRST_EDITION_SALE = re.compile(r'\b(?:first|1st)\b(?:\s*\(\s*1st\s*\))?\s+(?:(?:true|stated|american|english|british|uk|u\.?s\.?|trade|retail|hardcover|hardback)\s+){0,2}'
+                                r'(?:edition|eds?\b|edn\b|printing|print\b|impression)|1st/1st|'
+                                r'\b(?:first|1st)\b(?:\s*\(\s*1st\s*\))?\s+(?!book\s+club\b)(?:[a-z&\'.]+\s+){1,2}edition\b', re.I)
 # a listing of a whole set, where the copy on the shelf is usually one volume or a few
 SET_LISTING = re.compile(r'\b(?:\d+|two|three|four|five|six|seven|eight|nine|ten|twelve)[\s-]*(?:vol(?:ume)?s?\b|v\b|book set)|\bcomplete set\b|'
                          r'\bset\b|\ball (?:first editions|volumes)\b|\bvols\b|(?<![\d/.])\b(?:[2-9]|[1-4]\d)\s+(?:[\w-]+\s+){1,3}vol(?:ume)?s\b|'

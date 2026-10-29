@@ -294,6 +294,14 @@ bundles = refdata.Reference(price_files=[sheet('bundles.csv', ['Title', 'Sale Pr
 a = rules.assess(book('The Tin Lantern', 'Orrin Blake'), 'cheap', bundles, 10)
 check('"3 Books" or a bundle values none of its books; "2 books in 1" is one book', [h['price'] for h in a['comps']], [30.0])
 check('a set of one work is no bundle: the set rules handle it', rules.several_books('The Tin Lantern, Orrin Blake, 3 books set'), False)
+check('"First Edn" and a reissue\'s "First (1st) Harrow Press Edition" are first-edition wordings; a first book-club edition is not',
+      [bool(rules.FIRST_EDITION_SALE.search(t)) for t in ('Low Tide, First Edn, First Issue', 'Low Tide - First ( 1st ) Harrow Press Edition 1948',
+                                                          'Low Tide, First Book Club Edition')], [True, True, False])
+reissue = refdata.Reference(price_files=[sheet('reissue.csv', ['Title', 'Sale Price', 'Sale Date'], [
+    ['Low Tide by Hollis Prentiss - First ( 1st ) Harrow Press Edition 1948', '$695.00', 'Jan 1, 2025'],
+    ['Low Tide, Hollis Prentiss, 1950 printing', '$60.00', 'Feb 1, 2025']])])
+a = rules.assess(book('Low Tide', 'Hollis Prentiss'), 'rare', reissue, 30)
+check("so a reissue's $695 first doesn't value a copy with nothing to say it is one", [h['price'] for h in a['comps']], [60.0])
 
 # the bookshop's paperback and book-club list: its sales value only paperbacks and book-club copies
 kinds = refdata.Reference(price_files=[
