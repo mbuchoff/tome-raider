@@ -277,6 +277,10 @@ check('a limited, numbered story collection is kept, like a fine-press one', a['
 a = rules.assess(book('The Lost Stories', 'Orrin Blake', look='modern', form='story collection'), 'extreme', fixes, 0)
 check('an ordinary one is still left out', a['reason'], 'collection or anthology not on the whitelist')
 check('"red-lettered" is no lettered edition', fixes.rx['collectible_marks'].search('red-lettered black spine'), None)
+fel = refdata.Reference(price_files=[sheet('fel.csv', ['Title', 'Sale Price', 'Sale Date'], [
+    ['Harbor Nights, Hollis Prentiss, First Edition Library FEL 1931', '$160.00', 'Jan 1, 2025'],
+    ['Harbor Nights by Hollis Prentiss, Grosset & Dunlap 1935', '$40.00', 'Feb 1, 2025']])])
+check('a First Edition Library facsimile values no real copy', [h['price'] for h in rules.assess(book('Harbor Nights', 'Hollis Prentiss'), 'rare', fel, 30)['comps']], [40.0])
 
 # the bookshop's paperback and book-club list: its sales value only paperbacks and book-club copies
 kinds = refdata.Reference(price_files=[

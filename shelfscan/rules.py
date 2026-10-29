@@ -13,7 +13,8 @@ PAPERBACK_HOUSES = re.compile(r'\b(signet|ace|bantam|dell|pocket books|pyramid|l
                               r'belmont|monarch|beacon|corgi|panther|ballantine|penguin|phantom|falcon)\b', re.I)
 # a sentence of the notes about signed copies: the bookshop wants one signature line, from the sales, and no other
 SIGNED_MENTION = re.compile(r"\bsigned\b|\binscribed\b|autograph|author'?s signature", re.I)
-LOT_WORDS = re.compile(r'\blot of\b|\blot\b \d|\bset of\b|facsimile|reprint|book club|\bbce\b', re.I)
+# (the First Edition Library, "FEL", prints facsimiles of first editions)
+LOT_WORDS = re.compile(r'\blot of\b|\blot\b \d|\bset of\b|facsimile|reprint|book club|\bbce\b|first editions? library|\bfel\b', re.I)
 # a listing of several different books ("4 Franklin Library Leather Paine ... Prentiss Plays ..."): its price is no one book's
 MULTI_BOOK = re.compile(r'\blot of\b|\blot\b \d|^\W*(?:[2-9]|[1-4]\d)\s+(?:franklin|easton|folio|heritage)\b', re.I)
 # a copy whose spine states a later edition or printing ("6th Edition"): first-edition sales say nothing about it
