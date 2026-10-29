@@ -88,6 +88,17 @@ rows3, _ = refdata.load_prices([special])
 check('a cp1252 file loads, its dash intact', [(r['title'], r['publisher']) for r in rows3], [('Night Harbor \u2013 illustrated, slipcase', 'Folio Society')])
 check('and its publisher column says whose sale it is, though the title doesn\'t', rules.house_of_sale(rows3[0]), 'Folio Society')
 
+# a supplementary file (Specialty Genres) counts only for a title or author the main files have no sales of
+genres = os.path.join(d, 'specialty_genres.csv')
+with open(genres, 'w', newline='') as f:
+    csv.writer(f).writerows([['Title', 'Sold Price', 'Sale Date', 'Category'],
+                             ['Wuthering Heights, Emily Brontë, 1850 leather', '$4,000.00', 'Feb 2, 2024', 'Antiquarian'],
+                             ['The Hollow Lantern by Orrin Vale, occult grimoire, numbered', '$180.00', 'Mar 3, 2025', 'Occult']])
+both = refdata.Reference(price_files=[core, genres])
+check('a title the main files have: their sales only', [h['price'] for h in both.comps('Emily Brontë', 'Wuthering Heights')[0]], [900.0])
+check('a title only the supplementary file has: its sales', [h['price'] for h in both.comps('Orrin Vale', 'The Hollow Lantern')[0]], [180.0])
+check('and an author only it has', [h['price'] for h in both.author_sales('Orrin Vale')], [180.0])
+
 # the index finds what a full scan finds, apostrophes and accents included
 queries = [('Emily Brontë', 'Wuthering Heights'), ("Flannery O'Connor", 'Wise Blood'), ("Tim O'Brien", 'The Things They Carried'),
            ('Daphne du Maurier', "Don't Look Now"), ('', "Don't Look Now"), ('', 'The Things They Carried'), ('', 'Wuthering Heights'),

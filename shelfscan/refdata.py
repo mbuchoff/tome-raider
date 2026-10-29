@@ -11,11 +11,15 @@ A sale found in an earlier file with the same title, price and date is loaded on
 Press and Franklin Library) lose the conditions rules.json leaves out (sold_conditions_left_out); a Signed column marks
 signed sales whose listing title doesn't say so. Lookups go through a word index: each one reads only the sales holding its
 rarest word, never every sale."""
-import collections, csv, datetime, difflib, hashlib, io, json, os, re, statistics
+import collections, csv, datetime, difflib, hashlib, io, json, os, re, statistics, unicodedata
 from .xlsx_read import read as read_xlsx
 
 DATA = os.environ.get('SHELFSCAN_DATA') or os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'data')
-DEFAULT_PRICE_FILES = ['sales_report.xlsx', 'master_list_2022.xlsx', 'first_editions.xlsx', 'easton_franklin.xlsx', 'special_editions.csv']
+DEFAULT_PRICE_FILES = ['sales_report.xlsx', 'master_list_2022.xlsx', 'first_editions.xlsx', 'easton_franklin.xlsx', 'special_editions.csv',
+                       'specialty_genres.csv']
+# files used only for a title or author the others have no sales of: the bookshop's Specialty Genres file (occult, sciences,
+# travel...) is full of antiquarian listings that would otherwise value ordinary later copies of classics
+SUPPLEMENTARY = {'specialty_genres.csv'}
 
 
 def fetch(names, cache=None):
@@ -98,7 +102,7 @@ def load_prices(paths):
                     seen.add(item)
                 date = to_date(get('date'))
                 image = str(get('image') or '').strip()
-                row = dict(title=title, author=(get('author') or '').strip(), price=price, date=date, url=url if url.startswith('http') else '',
+                row = dict(file=os.path.basename(path), title=title, author=(get('author') or '').strip(), price=price, date=date, url=url if url.startswith('http') else '',
                            item=item, image=image if image.startswith('http') else '', condition=str(get('condition') or '').strip(),
                            signed=str(get('signed') or '').strip().lower() in ('yes', 'y', 'true', '1'), publisher=str(get('publisher') or '').strip())
                 key = (title.lower(), round(price, 2), date)
@@ -254,8 +258,13 @@ TOKEN = re.compile(r'[a-z0-9]+')      # the index's words: a word-bounded match 
 REGEX_TWINS = str.maketrans({'ı': 'i', 'ſ': 's'})
 
 
+def fold(s):
+    """Lower case without accents ('Brontë' -> 'bronte'), so a name matches however a listing spells it."""
+    return unicodedata.normalize('NFKD', (s or '').lower().translate(REGEX_TWINS)).encode('ascii', 'ignore').decode()
+
+
 def tokens(s):
-    return TOKEN.findall((s or '').lower().translate(REGEX_TWINS))
+    return TOKEN.findall(fold(s))
 
 
 def lookup_words(t):
@@ -381,6 +390,15 @@ class Reference:
         return next((n for n, rx in self.watch if rx.search(author) and same_person(n, author, self.single_names)), None)
 
     def comps(self, author, title, old=False, about=False):
+        """Sold listings for this title, and whether they were matched together with the author: from the main price files,
+        or from the supplementary ones (SUPPLEMENTARY) when the main ones have none."""
+        hits, known = self._comps(author, title, old, about, main_only=True)
+        return (hits, known) if hits else self._comps(author, title, old, about, main_only=False)
+
+    def _pool(self, rows, main_only):
+        return [r for r in rows if r.get('file') not in SUPPLEMENTARY] if main_only else rows
+
+    def _comps(self, author, title, old, about, main_only):
         """Sold listings for this title, and whether they were matched together with the author.
         With an author read, any title counts but the listing must name one of the authors' surnames; without one, only a
         distinctive title of three or more significant words counts. An old copy that finds nothing either way may also match
@@ -392,8 +410,8 @@ class Reference:
         surs = surnames(author)
         if surs:
             srx = re.compile(r'\b(' + '|'.join(map(re.escape, surs)) + r')\b')
-            by_author = [r for r in self.having(*surs) if any(s in r['text'] for s in surs) and srx.search(r['text'])
-                         and self.names_fit(author, r['text'], title)]
+            by_author = [r for r in self._pool(self.having(*surs), main_only) if any(s in fold(r['text']) for s in surs)
+                         and srx.search(fold(r['text'])) and self.names_fit(author, r['text'], title)]
             main = re.split(r'\s*[:;(]|\s+-\s+', title or '')[0]          # 'Bambi: A Life in the Woods' -> 'Bambi'
             for t in dict.fromkeys([title, main]):
                 trx = title_rx(t, short_ok=True)
@@ -402,21 +420,23 @@ class Reference:
         else:
             trx = title_rx(title)
             if trx and len([w for w in words(title) if w not in STOP]) >= 3 and not about:
-                hits = [r for r in self.having(lookup_words(title)) if trx.search(r['text'])]
+                hits = [r for r in self._pool(self.having(lookup_words(title)), main_only) if trx.search(r['text'])]
                 if hits and one_book(hits, title): return hits, False
         if old and not about:
             whole = ' '.join(words(re.sub(r'\(.*?\)|\?|\.\.\.|…', ' ', title or '')))
             for t in title_cores(title):
                 trx = title_rx(t)
-                hits = [r for r in self.having(lookup_words(t)) if trx and trx.search(r['text']) and not (r['year'] and r['year'] >= 1970)]
+                hits = [r for r in self._pool(self.having(lookup_words(t)), main_only) if trx and trx.search(r['text']) and not (r['year'] and r['year'] >= 1970)]
                 if hits and one_book(hits, t) and (len(hits) > 1 or t == whole): return hits, False      # one sale won't value a trimmed title
         return [], bool(surs)
 
     def author_sales(self, author):
-        """Every sale naming this author by their whole name, any book, any edition."""
+        """Every sale naming this author by their whole name, any book, any edition: from the main price files, or the
+        supplementary ones when the main ones have none."""
         rx = name_rx(author, self.single_names) if author else None
         if not rx: return []
-        return [r for r in self.having(name_key(author)) if rx.search(r['text']) and self.names_fit(author, r['text'])]
+        sales = [r for r in self.having(name_key(author)) if rx.search(r['text']) and self.names_fit(author, r['text'])]
+        return self._pool(sales, True) or sales
 
     def signed_comps(self, author):
         return [r for r in self.author_sales(author) if r['signed'] or SIGNED_SALE.search(r['text'])]
@@ -428,7 +448,7 @@ class Reference:
 
 
 def surname(author):
-    w = [x for x in words(re.sub(r'\(.*?\)', ' ', author or '')) if len(x) > 2 and x not in STOP and x not in ('jr', 'sir')]
+    w = [x for x in words(fold(re.sub(r'\(.*?\)', ' ', author or ''))) if len(x) > 2 and x not in STOP and x not in ('jr', 'sir')]
     return w[-1] if w else None
 
 

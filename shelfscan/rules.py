@@ -190,6 +190,7 @@ def whitelist_match(ref, author, title, imprint, look, text):
 
 def assess(b, category, ref, minimum):
     author, title, imprint = clean(b.get('author')), clean(b.get('title')), clean(b.get('imprint'))
+    read_imprint = imprint          # as read on the spine, before the foot's or the notes' guesses fill it in
     marks, look, fmt = (b.get('marks') or ''), (b.get('look') or '').lower(), (b.get('format') or '').lower()
     foot = b.get('foot') or {}                  # the close-up of the spine's foot, read for pulls and leads
     foot_text = ' '.join(clean(foot.get(k)) for k in ('foot_text', 'logo', 'imprint', 'reprint'))
@@ -255,7 +256,9 @@ def assess(b, category, ref, minimum):
     # evidence from the reference data
     adaptation = ADAPTATION.search(' '.join([title, marks, b.get('spine_text') or '']))
     hits, author_known = ref.comps(author, title, old, about=about) if not adaptation else ([], bool(author))
-    house = special_house(' '.join([imprint, b.get('spine_text') or '', foot_text]))
+    # a publisher whose sales value only its own copies must be read as text, on the spine or at its foot: the foot
+    # close-up's guess from an emblem ("gold circular emblem": Easton Press) has been wrong
+    house = special_house(' '.join([read_imprint, b.get('spine_text') or '', clean(foot.get('foot_text'))]))
     if not house and VISIBLY_LEATHER.search(' '.join([marks, b.get('appearance') or ''])): house = ANY_LEATHER
     signed_ok = signed_shelf or bool(re.search(r'\bsigned\b', marks, re.I))
     comps, only_signed = relevant_comps(hits, fmt, signed_ok, house)

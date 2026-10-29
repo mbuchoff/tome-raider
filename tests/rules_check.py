@@ -205,6 +205,8 @@ a = rules.assess(book('Quiet Meridian', 'Ada Wexford', imprint='Modern Library',
 check('a Modern Library copy: only Modern Library sales', a['value'], 45.0)
 a = rules.assess(book('Quiet Meridian', 'Ada Wexford', imprint='?', look='old', foot={'foot_text': 'GIANT / G 41', 'imprint': 'Giant'}), 'cheap', houses, 30)
 check('a Modern Library Giant known by its foot: the same', a['value'], 45.0)
+a = rules.assess(book('Quiet Meridian', 'Ada Wexford', imprint='', look='old', foot={'logo': 'gold circular emblem', 'imprint': 'Easton Press'}), 'cheap', houses, 30)
+check("a foot's guess from an emblem, with no publisher read as text, doesn't make it a publisher's copy", a['value'], 100.0)
 a = rules.assess(book('Quiet Meridian', 'Ada Wexford', imprint='The Folio Society', look='modern'), 'cheap', houses, 30)
 check('a Folio copy: its Folio sale, which the Publisher column names', a['value'], 150.0)
 a = rules.assess(book('Quiet Meridian', 'Ada Wexford', imprint='Knopf', look='old'), 'cheap', houses, 30)
