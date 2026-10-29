@@ -234,18 +234,17 @@ def assess(b, category, ref, minimum):
     comps, only_signed = relevant_comps(hits, fmt, signed_ok, house)
 
     # other editions: a sale dated outside the copy's own years, a first edition from another publisher than the copy's, or
-    # a valuable first edition ($500 and up) with nothing on the copy to say it is one, values a later printing at nothing
+    # a valuable first-edition sale ($500 and up) with nothing on the copy to say it is one, values a later printing at nothing
     lo, hi = era(look, year)
     shows_first = bool(re.search(r'first edition|1st edition|first printing|1st printing', marks, re.I))
     pub = same_imprint(imprint, notes)
-    firsts = [h for h in comps if FIRST_EDITION_SALE.search(h['title'])]
-    costly = bool(firsts) and median([h['price'] for h in firsts]) >= VALUABLE_FIRST and not (shows_first or (pub and year))
+    evidence = shows_first or bool(pub and year)        # something on the copy says it may be the first edition
     first_year = min((int(y) for y in re.findall(r'(?<!\d)(1[5-9]\d\d|20[0-2]\d)(?!\d)', notes.get('first') or '')), default=None)
     def other_edition(h):
         if h.get('year') and not lo <= h['year'] <= hi: return True
         if FIRST_EDITION_SALE.search(h['title']):
             if not h.get('year') and first_year and not lo <= first_year <= hi: return True     # an undated first: the notes' year
-            return pub is False or costly
+            return pub is False or (h['price'] >= VALUABLE_FIRST and not evidence)
         return False
     # partial sets: single volumes value a volume; where the title sold only as whole sets, the copy is still listed, with
     # the sets' price as a ceiling it won't reach (the bookshop: "worth much less than a complete set")

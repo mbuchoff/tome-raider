@@ -95,6 +95,14 @@ a = rules.assess(book('The Prophet', 'Kahlil Gibran', imprint='Knopf'), 'cheap',
 check('The Prophet, no sign of the 1923 first: not valued from $1,400-$2,500 firsts', (a['value'], a['decision'] == 'pull'), (None, False))
 a = rules.assess(book('The Prophet', 'Kahlil Gibran', imprint='Knopf', marks='first edition stated', look='old'), 'cheap', ref, 50)
 check('marked first edition on the copy: valued from them', a['value'] is not None and a['value'] >= 1000)
+cheap = refdata.Reference(price_files=[sheet('prophet.csv', ['Title', 'Sale Price', 'Sale Date'], [
+    ['The Prophet, Kahlil Gibran, 1923 first edition, Knopf', '$2,500.00', 'Jan 1, 2025'],
+    ['The Prophet, Kahlil Gibran, first edition 1923 later printing', '$120.00', 'Feb 1, 2025'],
+    ['The Prophet, Kahlil Gibran, first edition, 1931 printing', '$90.00', 'Mar 1, 2025'],
+    ['The Prophet, Kahlil Gibran, Knopf 1940', '$60.00', 'Apr 1, 2025']])])
+a = rules.assess(book('The Prophet', 'Kahlil Gibran', imprint='Knopf'), 'cheap', cheap, 50)
+check('each $500+ first-edition sale is left out, even when cheaper "first edition" listings keep the median low',
+      ([h['price'] for h in a['comps']], a['value']), ([120.0, 90.0, 60.0], 90.0))
 ulysses = dict(imprint='Modern Library', notes={'first': '1922, Shakespeare and Company, Paris; US: Random House, 1934', 'confidence': 'high'})
 a = rules.assess(book('Ulysses', 'James Joyce', **ulysses), 'cheap', ref, 50)
 check('a Modern Library Ulysses: no value from the 1922 and 1934 firsts', a['value'], None)
