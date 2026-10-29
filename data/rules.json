@@ -1,7 +1,8 @@
 {
- "version": "plan-v4 with POC tuning (2026-10-29, round 9: round 8's answers of 28 October, finished: given and middle names on every path, signed, first-edition and set wordings, no author-wide value for a book about someone, stricter title-only matches, no signature talk in the notes)",
+ "version": "plan-v4 with POC tuning (2026-10-29, round 10: specialty publishers value only their own copies, from the bookshop's Special Editions file)",
   "sold_conditions_left_out": ["Sealed", "New"],
   "single_name_authors": ["Homer", "Virgil", "Vergil", "Ovid", "Horace", "Plato", "Aristotle", "Sophocles", "Euripides", "Aeschylus", "Aristophanes", "Herodotus", "Thucydides", "Xenophon", "Plutarch", "Tacitus", "Livy", "Cicero", "Seneca", "Lucretius", "Catullus", "Juvenal", "Petronius", "Apuleius", "Boethius", "Sappho", "Aesop", "Confucius", "Dante", "Petrarch", "Boccaccio", "Rumi", "Hafiz", "Voltaire", "Molière", "Moliere", "Colette", "Saki", "Stendhal", "Novalis", "Brontë", "Bronte", "Seuss"],
+  "specialty_publishers": {"Modern Library": "\\bmodern\\s+library\\b|\\bgiant\\b\\W*g\\s*\\d{1,3}\\b", "Folio Society": "\\bfolio\\s+soc(?:iety)?\\b", "Heritage Press": "\\bheritage\\s+(?:press|club)\\b", "Arkham House": "\\barkham\\s+house\\b", "Cemetery Dance": "\\bcemetery\\s+dance\\b", "Gnome Press": "\\bgnome\\s+press\\b", "Arion Press": "\\barion\\s+press\\b", "Centipede Press": "\\bcentipede\\s+press\\b", "Kelmscott Press": "\\bkelmscott\\b"},
  "minimum_value": {
   "thrift": 50,
   "cheap": 50,

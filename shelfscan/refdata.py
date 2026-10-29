@@ -11,11 +11,11 @@ A sale found in an earlier file with the same title, price and date is loaded on
 Press and Franklin Library) lose the conditions rules.json leaves out (sold_conditions_left_out); a Signed column marks
 signed sales whose listing title doesn't say so. Lookups go through a word index: each one reads only the sales holding its
 rarest word, never every sale."""
-import collections, csv, datetime, difflib, hashlib, json, os, re, statistics
+import collections, csv, datetime, difflib, hashlib, io, json, os, re, statistics
 from .xlsx_read import read as read_xlsx
 
 DATA = os.environ.get('SHELFSCAN_DATA') or os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'data')
-DEFAULT_PRICE_FILES = ['sales_report.xlsx', 'master_list_2022.xlsx', 'first_editions.xlsx', 'easton_franklin.xlsx']
+DEFAULT_PRICE_FILES = ['sales_report.xlsx', 'master_list_2022.xlsx', 'first_editions.xlsx', 'easton_franklin.xlsx', 'special_editions.csv']
 
 
 def fetch(names, cache=None):
@@ -65,7 +65,10 @@ def to_date(v):
 
 def _tables(path):
     if path.lower().endswith('.csv'):
-        with open(path, newline='', encoding='utf-8-sig') as f: yield os.path.basename(path), list(csv.reader(f))
+        raw = open(path, 'rb').read()
+        try: text = raw.decode('utf-8-sig')
+        except UnicodeDecodeError: text = raw.decode('cp1252', errors='replace')     # an export from Excel on Windows
+        yield os.path.basename(path), list(csv.reader(io.StringIO(text, newline='')))
     else:
         for name, rows in read_xlsx(path).items(): yield name, rows
 

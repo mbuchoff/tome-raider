@@ -9,3 +9,4 @@ version.json
 
 # the shop's sales spreadsheets live in the private storage container (reference/), not in the repository
 data/*.xlsx
+data/*.csv

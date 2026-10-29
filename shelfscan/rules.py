@@ -2,9 +2,9 @@
 
 Each book gets a decision ('pull', 'not pulled', or 'skip' for books left out silently), the evidence behind it, an estimated
 value from the price file when there is one, and the text for the results page."""
-import difflib, re
+import difflib, json, os, re
 from urllib.parse import quote_plus
-from .refdata import SIGNED_SALE, median, name_words, same_person, surnames, tokens, words
+from .refdata import DATA, SIGNED_SALE, median, name_words, same_person, surnames, tokens, words
 
 CATEGORIES = {'thrift': 'Thrift store', 'cheap': 'Cheap bookshop', 'rare': 'Rare bookshop', 'extreme': 'Extremely rare', 'signed': 'Signed shelf'}
 PAPERBACK_WORDS = re.compile(r'paperback|\bpb\b|\bpbo\b|mass market|softcover|soft cover|digest', re.I)
@@ -90,23 +90,28 @@ def links(author, title, imprint):
 # leather-bound publishers whose sales value only their own copies: an Easton Press Fahrenheit 451 says nothing about a
 # Ballantine one, and the other way round
 LEATHER = {'Easton Press': re.compile(r'\beaston\b(?!\s+ellis)', re.I), 'Franklin Library': re.compile(r'\bfranklin\s+(library|mint)\b', re.I)}
+# the bookshop's specialty publishers, whose sales also value only their own copies (Modern Library, Folio Society...): a
+# list in rules.json, so adding one is a line. Easton and Franklin come first: "Easton Press Kelmscott Edition" is Easton's.
+SPECIALTY = {h: re.compile(rx, re.I) for h, rx in json.load(open(os.path.join(DATA, 'rules.json'))).get('specialty_publishers', {}).items()}
+HOUSES = {**LEATHER, **SPECIALTY}
 
 
-def leather_house(text):
-    """'Easton Press', 'Franklin Library' or None, from a copy's spine and imprint or a sale's listing title."""
-    return next((h for h, rx in LEATHER.items() if rx.search(text or '')), None)
+def special_house(text):
+    """The publisher whose sales value only its own copies ('Easton Press', 'Modern Library'...) or None, from a copy's
+    spine, imprint and foot or a sale's listing title."""
+    return next((h for h, rx in HOUSES.items() if rx.search(text or '')), None)
 
 
 def house_of_sale(h):
-    return h.get('publisher') if h.get('publisher') in LEATHER else leather_house(h['title'])
+    return h.get('publisher') if h.get('publisher') in HOUSES else special_house(h['title'])
 
 
 ANY_LEATHER = 'leather'      # a copy that is visibly leatherbound but names no publisher
 
 
 def same_house(sales, house):
-    """The sales from the copy's own publisher when it is Easton Press or Franklin Library, none of theirs for an ordinary
-    copy, and any for a copy that is visibly leatherbound but names no publisher."""
+    """The sales from the copy's own publisher when it is Easton Press, Franklin Library or a specialty publisher, none of
+    theirs for an ordinary copy, and any for a copy that is visibly leatherbound but names no publisher."""
     if house == ANY_LEATHER: return list(sales)
     return [h for h in sales if house_of_sale(h) == house]
 
@@ -250,7 +255,7 @@ def assess(b, category, ref, minimum):
     # evidence from the reference data
     adaptation = ADAPTATION.search(' '.join([title, marks, b.get('spine_text') or '']))
     hits, author_known = ref.comps(author, title, old, about=about) if not adaptation else ([], bool(author))
-    house = leather_house(' '.join([imprint, b.get('spine_text') or '', foot_text]))
+    house = special_house(' '.join([imprint, b.get('spine_text') or '', foot_text]))
     if not house and VISIBLY_LEATHER.search(' '.join([marks, b.get('appearance') or ''])): house = ANY_LEATHER
     signed_ok = signed_shelf or bool(re.search(r'\bsigned\b', marks, re.I))
     comps, only_signed = relevant_comps(hits, fmt, signed_ok, house)
@@ -259,7 +264,9 @@ def assess(b, category, ref, minimum):
     # a valuable first-edition sale ($500 and up) with nothing on the copy to say it is one, values a later printing at nothing
     lo, hi = era(look, year)
     shows_first = bool(FIRST_EDITION_SALE.search(marks))
-    pub = same_imprint(imprint, notes)
+    # a Modern Library, Folio or Easton copy is valued only from its own publisher's sales: their "1st edition" is that
+    # publisher's first printing, never the work's first edition from another house
+    pub = same_imprint(imprint, notes) if house in (None, ANY_LEATHER) else True
     evidence = shows_first or bool(pub and year)        # something on the copy says it may be the first edition
     first_year = min((int(y) for y in re.findall(r'(?<!\d)(1[5-9]\d\d|20[0-2]\d)(?!\d)', notes.get('first') or '')), default=None)
     def other_edition(h):

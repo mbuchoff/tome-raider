@@ -193,6 +193,25 @@ check('a work first published in several volumes: "Complete ... 1931-1936" is a 
 check('a range alone dates one book otherwise', bool(rules.SET_LISTING.search('The Hobbit, first edition 1937-1966')), False)
 check('"Harpers" on the spine is Harper & Brothers in the notes', rules.same_imprint('Harpers', {'first': '1904, Harper & Brothers, London'}), True)
 
+# specialty publishers: a Modern Library or Folio copy is valued only from its publisher's sales, an ordinary copy from neither
+houses = refdata.Reference(price_files=[sheet('houses.csv', ['Title', 'Sale Price', 'Sale Date', 'Publisher'], [
+    ['Quiet Meridian, Ada Wexford, Modern Library 1950', '$40.00', 'Jan 1, 2025', ''],
+    ['Quiet Meridian, Ada Wexford, Modern Library', '$50.00', 'Feb 1, 2025', ''],
+    ['Quiet Meridian by Ada Wexford, illustrated, slipcase', '$150.00', 'Mar 1, 2025', 'Folio Society'],
+    ['Quiet Meridian, Ada Wexford, 1951 Knopf', '$90.00', 'Apr 1, 2025', ''],
+    ['Quiet Meridian, Ada Wexford, Knopf 1952', '$110.00', 'May 1, 2025', ''],
+    ['Long Thaw, Ada Wexford, Modern Library 1st edition 1934', '$75.00', 'Jun 1, 2025', '']])])
+a = rules.assess(book('Quiet Meridian', 'Ada Wexford', imprint='Modern Library', look='old'), 'cheap', houses, 30)
+check('a Modern Library copy: only Modern Library sales', a['value'], 45.0)
+a = rules.assess(book('Quiet Meridian', 'Ada Wexford', imprint='?', look='old', foot={'foot_text': 'GIANT / G 41', 'imprint': 'Giant'}), 'cheap', houses, 30)
+check('a Modern Library Giant known by its foot: the same', a['value'], 45.0)
+a = rules.assess(book('Quiet Meridian', 'Ada Wexford', imprint='The Folio Society', look='modern'), 'cheap', houses, 30)
+check('a Folio copy: its Folio sale, which the Publisher column names', a['value'], 150.0)
+a = rules.assess(book('Quiet Meridian', 'Ada Wexford', imprint='Knopf', look='old'), 'cheap', houses, 30)
+check('an ordinary copy: neither publisher\'s sales', a['value'], 100.0)
+a = rules.assess(book('Long Thaw', 'Ada Wexford', imprint='Modern Library', look='old', notes={'first': '1921, Harrap, London', 'confidence': 'high'}), 'cheap', houses, 30)
+check("a Modern Library \"1st edition\" is Modern Library's first printing, not the work's first from another publisher", a['value'], 75.0)
+
 # a book about someone gets no author-wide value on extremely rare and signed shelves
 about = refdata.Reference(price_files=[sheet('about.csv', ['Title', 'Sale Price', 'Sale Date'], [
     ['Winter Novel by Mark Schorer, 1950', '$200.00', 'Jan 1, 2025'], ['Spring Stories by Mark Schorer, 1952', '$220.00', 'Feb 1, 2025'],

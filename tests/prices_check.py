@@ -72,8 +72,21 @@ check('an ordinary copy is valued from no Easton sale', [h['price'] for h in rul
 check('and the author\'s Easton sales count only for Easton copies', ([h['price'] for h in rules.same_house(ref.signed_comps('Ray Bradbury'), E)],
       [h['price'] for h in rules.same_house(ref.author_comps('Ray Bradbury'), E)], [h['price'] for h in rules.same_house(ref.author_comps('Ray Bradbury'), None)]),
       ([300.0], [125.0], [900.0]))
-check('whose copy is it', [rules.leather_house(t) for t in ('EASTON PRESS', 'The Franklin Library', 'Bret Easton Ellis', 'Benjamin Franklin', 'Knopf')],
+check('whose copy is it', [rules.special_house(t) for t in ('EASTON PRESS', 'The Franklin Library', 'Bret Easton Ellis', 'Benjamin Franklin', 'Knopf')],
       ['Easton Press', 'Franklin Library', None, None, None])
+check('the specialty publishers too, a Modern Library Giant by its number, and Easton\'s Kelmscott edition is Easton\'s',
+      [rules.special_house(t) for t in ('Modern Library', 'GIANT / G 26', 'The Folio Society', 'Heritage Club', 'ARKHAM HOUSE',
+                                        'Easton Press Kelmscott Edition', 'Gnome', 'a giant of a book')],
+      ['Modern Library', 'Modern Library', 'Folio Society', 'Heritage Press', 'Arkham House', 'Easton Press', None, None])
+
+# a Special Editions file: exported from Excel on Windows (cp1252), its Publisher column naming each sale's publisher
+special = os.path.join(d, 'special.csv')
+with open(special, 'w', newline='', encoding='cp1252') as f:
+    csv.writer(f).writerows([['Image Link', 'Title', 'Sold Price', 'Format', 'Sale Date', 'Publisher'],
+                             ['', 'Night Harbor \u2013 illustrated, slipcase', '$140.00', 'Hardcover', 'Jan 17, 2026', 'Folio Society']])
+rows3, _ = refdata.load_prices([special])
+check('a cp1252 file loads, its dash intact', [(r['title'], r['publisher']) for r in rows3], [('Night Harbor \u2013 illustrated, slipcase', 'Folio Society')])
+check('and its publisher column says whose sale it is, though the title doesn\'t', rules.house_of_sale(rows3[0]), 'Folio Society')
 
 # the index finds what a full scan finds, apostrophes and accents included
 queries = [('Emily Brontë', 'Wuthering Heights'), ("Flannery O'Connor", 'Wise Blood'), ("Tim O'Brien", 'The Things They Carried'),
