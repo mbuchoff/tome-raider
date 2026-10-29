@@ -15,7 +15,7 @@
     <br><strong>Runs the marks were set on:</strong> {{ t.marked_on.agree }} agree, {{ t.marked_on.disagree }} disagree, {{ t.marked_on['not found'] }} not found, {{ t.marked_on.unanswered }} unanswered.</p>
   {% if can_rerun %}
   <form method="post" action="{{ url_for('marks.rerun_marked') }}"><button class="secondary" type="submit">Re-run every marked capture with the current baseline</button>
-    <span class="muted small">Saved responses are reused, so only reading that changed is paid for.</span></form>
+    <span class="muted small">Each capture's photos are read again, so this costs about what their first runs did. Captures already run on the current baseline are skipped.</span></form>
   {% endif %}
 </div>
 

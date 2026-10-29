@@ -1,6 +1,7 @@
 """Claude API calls with a response cache, cost tracking and a spending cap.
 
-Responses are cached by a hash of the model, prompt and image, so re-running a photo never pays twice.
+Responses are saved under a hash of the model, prompt and image, so a run interrupted by a restart never pays twice. A run
+that reads its photos again (every run of a capture after its first) reuses only the responses saved since it was queued.
 Before each call the worst-case cost is reserved against the job's cap, using the free token count. Each photo spends through
 its own part of the job's budget, so the run can say what every photo cost."""
 import base64, hashlib, json, os, threading, time
@@ -20,9 +21,10 @@ def cost(model, usage):
 
 
 class Budget:
-    """Spending for one job, with a cap. Thread-safe."""
-    def __init__(self, cap):
+    """Spending for one job, with a cap. Thread-safe. fresh_since (Unix time): saved responses from before it aren't reused."""
+    def __init__(self, cap, fresh_since=None):
         self.cap, self.spent, self.reserved, self.calls, self.cached = cap, 0.0, 0.0, 0, 0
+        self.fresh_since = fresh_since
         self.tokens = {'input': 0, 'output': 0}
         self.lock = threading.Lock()
         self.parts = []
@@ -65,6 +67,9 @@ class Part:
     def __init__(self, budget):
         self.budget, self.spent, self.calls, self.cached = budget, 0.0, 0, 0
 
+    @property
+    def fresh_since(self): return self.budget.fresh_since
+
     def reserve(self, worst): self.budget.reserve(worst)
 
     def release(self, worst): self.budget.release(worst)
@@ -90,8 +95,11 @@ class Claude:
         key = hashlib.sha256(model.encode() + b'\0' + prompt.encode() + b'\0' + (image_jpeg or b'')).hexdigest()
         path = os.path.join(self.cache_dir, key[:2], key + '.json')
         if os.path.exists(path):
-            budget.hit()
-            return json.load(open(path))['text']
+            saved = json.load(open(path))
+            since = getattr(budget, 'fresh_since', None)
+            if since is None or saved.get('at', 0) >= since:        # a response saved before this change has no time: it's older
+                budget.hit()
+                return saved['text']
         image = [{'type': 'image', 'source': {'type': 'base64', 'media_type': 'image/jpeg', 'data': base64.standard_b64encode(image_jpeg).decode()}}] if image_jpeg else []
         messages = [{'role': 'user', 'content': image + [{'type': 'text', 'text': prompt}]}]
         kw = dict(model=model, max_tokens=max_tokens, messages=messages)
@@ -106,7 +114,7 @@ class Claude:
             budget.release(worst)
             raise
         u = {'input_tokens': msg.usage.input_tokens, 'output_tokens': msg.usage.output_tokens}
-        rec = dict(model=model, seconds=round(time.time() - t0, 1), usage=u, cost=cost(model, u), stop=msg.stop_reason,
+        rec = dict(model=model, at=time.time(), seconds=round(time.time() - t0, 1), usage=u, cost=cost(model, u), stop=msg.stop_reason,
                    text=''.join(b.text for b in msg.content if b.type == 'text'))
         budget.settle(worst, rec)
         if self.ledger:

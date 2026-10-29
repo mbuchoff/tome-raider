@@ -1,7 +1,7 @@
 """Checks each photo's part of a run's budget: its own spending, the shared cap, Claude calls through a part, the pipeline
 giving every photo its part, and a run's cap of $2 a photo. No Claude calls: a fake client stands in.
 usage: python tests/budget_check.py"""
-import contextlib, json, os, sys, tempfile, types
+import contextlib, json, os, sys, tempfile, time, types
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from shelfscan import claude as cl, images, notes, pipeline, reader, repo, rules
 from shelfscan.store import LocalStore
@@ -50,6 +50,11 @@ check('a paid call answers', c.ask(cl.SONNET, None, 'read this', 1000, 1000, p1)
 check('and is charged to its photo', b.summary()['photos'][0], {'spent': round(cl.cost(cl.SONNET, {'input_tokens': 1000, 'output_tokens': 500}), 4), 'calls': 1, 'cached_calls': 0})
 c.ask(cl.SONNET, None, 'read this', 1000, 1000, p2)
 check('the same call again comes from the cache, counted on its photo', b.summary()['photos'][1], {'spent': 0.0, 'calls': 0, 'cached_calls': 1})
+b2 = cl.Budget(2.0, fresh_since=time.time()); p3 = b2.part()          # a run reading its photos again, queued just now
+c.ask(cl.SONNET, None, 'read this', 1000, 1000, p3)
+check('a run reading again pays for a response saved before it was queued', (b2.summary()['calls'], b2.summary()['cached_calls']), (1, 0))
+c.ask(cl.SONNET, None, 'read this', 1000, 1000, p3)
+check('but reuses one saved since, as after a restart', (b2.summary()['calls'], b2.summary()['cached_calls']), (1, 1))
 fail.append(True)
 try: c.ask(cl.SONNET, None, 'something new', 1000, 1000, p2)
 except RuntimeError: pass

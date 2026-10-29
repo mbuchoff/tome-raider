@@ -41,7 +41,7 @@
 {% macro settings_text(p0) %}{% if p0 %}{{ categories[p0.category] }}{% for s, c in (p0.overrides or {}).items() %}, shelf {{ s }} {{ categories[c] }}{% endfor %}{% if p0.minimum %}, minimum ${{ p0.minimum }}{% endif %}{{ ', second read' if p0.second_read }}{% if p0.note %}; note: {{ p0.note }}{% endif %}{% endif %}{% endmacro %}
 {% set p0 = capture.photos[0] if capture.photos else {} %}
 <p class="small muted">{{ capture.photos|length }} photo{{ 's' if capture.photos|length != 1 }}: {{ capture.photos|map(attribute='name')|join(', ') }}.
-  Next run: {{ settings_text(p0) }}. Uploading the same photos again adds a run here.</p>
+  Next run: {{ settings_text(p0) }}. Uploading the same photos again adds a run here, unless they have already run on the current baseline.</p>
 
 <h2>Runs</h2>
 <div class="scroll"><table class="runs">
@@ -59,12 +59,13 @@
   {% endfor %}
 </table></div>
 {% if new_run_url %}
-<form method="post" action="{{ new_run_url }}"><button class="secondary" type="submit"{% if same_run %} disabled title="This capture already has a run on {{ baseline.sha[:7] }} with these settings"{% endif %}>Run against the current baseline{% if baseline and baseline.sha %} ({{ baseline.sha[:7] }}){% endif %}</button></form>
+<form method="post" action="{{ new_run_url }}"><button class="secondary" type="submit">Run against the current baseline{% if baseline and baseline.sha %} ({{ baseline.sha[:7] }}){% endif %}</button>
+  <span class="small muted">Reads the photos again, so it costs about what the first run did.</span></form>
 {% endif %}
 
 {% if run %}
 <h2>Run of {{ run.created[:16].replace('T', ' ') }} UTC</h2>
-<div class="runline"><span class="status {{ run.status }}">{{ run.status }}</span> · baseline {{ baseline_text(run.baseline) }}
+<div class="runline"><span class="status {{ run.status }}">{{ run.status }}</span> · baseline {{ baseline_text(run.baseline) }}{% if run.reread %} · photos read again{% endif %}
   {% if run.progress %} · {{ run.progress }}{% endif %}
   {% if run.cost %} · ${{ '%.2f' % run.cost.spent }} spent{% set n = photos_read(run, capture, results) %}{% set ph = run.photos or capture.photos %}{% set planned = ph|length %}
     {%- if n %} on <span class="nowrap">{% if n < planned %}{{ n }} of {{ planned }} photos{% else %}{{ n }} photo{{ 's' if n != 1 }}{% endif %}

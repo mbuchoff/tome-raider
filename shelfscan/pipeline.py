@@ -46,7 +46,7 @@ def run(job_dir, claude, now=time.time, on_progress=None):
     job.update(status='running', started=datetime.datetime.now(datetime.timezone.utc).isoformat(timespec='seconds'), error=None)
     save(job)
     t0 = now()
-    budget = Budget(job.get('cap', 2.0))
+    budget = Budget(job.get('cap', 2.0), fresh_since=job.get('fresh_since'))
     parts = [budget.part() for _ in job['photos']]       # one per photo, in order, so the cost says what each photo cost
     ref = reference()
     results = {'photos': [], 'version': ref.version()}
@@ -153,7 +153,9 @@ def run_stored(store, cid, rid, claude, work_root):
     try:
         for p in capture['photos']:
             with open(os.path.join(d, p['file']), 'wb') as f: f.write(repo.get_photo(store, cid, p['file']))
-        save_job(d, dict(id=cid, created=capture['created'], status='queued', cap=run_.get('cap') or 2.0, photos=repo.run_photos(capture, run_)))
+        fresh = datetime.datetime.fromisoformat(run_['created']).timestamp() if run_.get('reread') else None   # read again, from when it was queued
+        save_job(d, dict(id=cid, created=capture['created'], status='queued', cap=run_.get('cap') or 2.0, photos=repo.run_photos(capture, run_),
+                         fresh_since=fresh))
         job, results = run(d, claude, on_progress=mirror)
         uploads = {p['file'] for p in capture['photos']} | {'job.json', 'results.json'}
         for name in sorted(os.listdir(d)):

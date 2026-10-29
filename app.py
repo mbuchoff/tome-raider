@@ -49,12 +49,14 @@ def ordinal(n):
 app.jinja_env.globals.update(ordinal=ordinal, categories=CATEGORIES, commit_time=version.commit_time, photos_read=repo.photos_read, is_current_baseline=version.is_current)
 
 
-def queue_run(cid):
-    """Starts a run of the capture on the current baseline and returns its id; if the capture already has a run on this
-    baseline with the same settings (not failed or stopped), returns that one instead of running it twice."""
-    same = repo.matching_run(store, cid, version.baseline())
-    if same: return same['id']
-    run = repo.start_run(store, cid, PHOTO_CAP)
+def queue_run(cid, again=False):
+    """Starts a run of the capture on the current baseline and returns its id. Once the capture has a finished run, every
+    run reads its photos again. Unless again (the Run button), a capture that already has a run on this baseline with the
+    same settings (not failed or stopped) gets that one back instead: uploading the same photos twice doesn't pay twice."""
+    if not again:
+        same = repo.matching_run(store, cid, version.baseline())
+        if same: return same['id']
+    run = repo.start_run(store, cid, PHOTO_CAP, reread=any(r['status'] == 'done' for r in repo.list_runs(store, cid)))
     work.put((cid, run['id']))
     return run['id']
 
@@ -200,8 +202,7 @@ def capture_page(cid):
     if rid and not run: abort(404)
     results = repo.load_results(store, cid, run['id']) if run and run['status'] not in ('queued', 'running') else None
     busy = any(r['status'] in ('queued', 'running') for r in runs)
-    same = repo.matching_run(store, cid, version.baseline(), capture)
-    return render_template('capture.html', capture=capture, runs=runs, run=run, results=results, busy=busy, same_run=same,
+    return render_template('capture.html', capture=capture, runs=runs, run=run, results=results, busy=busy,
                            baseline=version.baseline(), new_run_url=url_for('new_run', cid=cid),
                            file_url=lambda n: url_for('run_file', cid=cid, rid=run['id'], name=n),
                            results_url=run and url_for('run_results', cid=cid, rid=run['id']),
@@ -213,7 +214,7 @@ def capture_page(cid):
 def new_run(cid):
     capture_or_404(cid)
     if spent_today() >= DAILY_CAP: abort(429)
-    return redirect(url_for('capture_page', cid=cid, run=queue_run(cid)))
+    return redirect(url_for('capture_page', cid=cid, run=queue_run(cid, again=True)))
 
 
 @app.route('/captures/<cid>/runs/<rid>/files/<name>')

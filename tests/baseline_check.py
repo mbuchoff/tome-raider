@@ -1,5 +1,6 @@
-"""Checks the runs table's baselines and the "Run against the current baseline" button: it names the current commit and
-is disabled while the capture already has a run on it with the same settings. Folder store, fake pipeline, no Claude calls.
+"""Checks the runs table's baselines and the "Run against the current baseline" button: it names the current commit, and
+every run after a capture's first reads the photos again, even on the same commit. Uploading the same photos again doesn't
+run twice on one commit. Folder store, fake pipeline, no Claude calls.
 usage: python tests/baseline_check.py"""
 import copy, glob, io, json, os, sys, tempfile, time
 HOME = tempfile.mkdtemp()
@@ -11,11 +12,13 @@ from shelfscan import pipeline, repo, version
 
 SAMPLE = json.load(open(glob.glob('/tmp/claude-1000/-home-node-repos-norris/079c046b-3c36-4ac5-bc43-0762eabab3cb/scratchpad/fbcheck/r4-4ed2dbeb691f.json')[0]))
 fail = []
+jobs = []                       # what each fake run was told: from when to read the photos again (None: reuse saved readings)
 SPENT = 0.25                    # what a fake run's first photo costs, each next one 5¢ more (the sample run reused saved responses)
 
 
 def fake_run(job_dir, claude, now=time.time, on_progress=None):
     job = pipeline.load_job(job_dir)
+    jobs.append(job.get('fresh_since'))
     if fail: raise RuntimeError(fail.pop())
     results = copy.deepcopy(SAMPLE)
     results['photos'] = [copy.deepcopy(SAMPLE['photos'][0]) for _ in job['photos']]       # one result per photo
@@ -64,35 +67,40 @@ check('the run header: one photo, and the cost of a book, no (i)', f'spent on <s
 check('the run header gives its time and SHA, without UTC', '· baseline <span title="commit ' + A['sha'] + '">2026-10-23 21:29</span> (<code class="small" title="'
       + A['sha'] + '">aaaaaaa</code>)' in page)
 check('the scan page says "latest" too', '">latest</span> (<code class="small">aaaaaaa</code>)</td>' in c.get('/').data.decode())
-check('the button names the current baseline', 'Run against the current baseline (aaaaaaa)</button>' in page)
-check('and is disabled: this capture already ran on it', '<button class="secondary" type="submit" disabled title="This capture already has a run on aaaaaaa' in page)
-r = c.post(f'/captures/{cid}/runs')
-check('posting anyway starts nothing', len(wait(cid)) == 1 and runs[0]['id'] in r.headers['Location'], r.headers.get('Location'))
+check('a first run reuses saved readings', (runs[0]['reread'], jobs), (False, [None]))
+check('the button names the current baseline, and says it reads the photos again',
+      'type="submit">Run against the current baseline (aaaaaaa)</button>' in page and 'Reads the photos again' in page)
+r = c.post(f'/captures/{cid}/runs'); runs = wait(cid)
+check('on the same commit it still runs, reading the photos again from when it was queued',
+      (len(runs), runs[0]['reread'], runs[0]['id'] in r.headers['Location'], jobs[-1] is not None
+       and abs(jobs[-1] - pipeline.datetime.datetime.fromisoformat(runs[0]['created']).timestamp()) < 0.001), (2, True, True, True))
+check('and its header says so', ' · photos read again' in c.get(f'/captures/{cid}').data.decode())
 
 current['b'] = B
 page = c.get(f'/captures/{cid}').data.decode()
-check('a new commit enables it', 'type="submit">Run against the current baseline (bbbbbbb)</button>' in page)
+check('a new commit: the button names it', 'type="submit">Run against the current baseline (bbbbbbb)</button>' in page)
 check('and the older run shows its time and SHA', '>latest<' not in page and '<td><span title="commit ' + A['sha'] + '">2026-10-23 21:29</span> (<code' in page
       and '>latest<' not in c.get('/').data.decode())
 c.post(f'/captures/{cid}/runs'); runs = wait(cid)
-check('and runs it', len(runs) == 2 and runs[0]['baseline']['sha'] == B['sha'])
-check('disabled again after', 'type="submit" disabled title=' in c.get(f'/captures/{cid}').data.decode())
+check('and runs it', len(runs) == 3 and runs[0]['baseline']['sha'] == B['sha'] and runs[0]['reread'])
+check('the button stays enabled after', 'type="submit">Run against' in c.get(f'/captures/{cid}').data.decode())
 index = c.get('/').data.decode()
 check('scan page: renamed columns', '<th>Runs</th><th>Pulls</th><th>Marked</th><th>Total Cost</th><th>Latest Baseline (UTC)</th>' in index)
-check('scan page: two runs, and the cost of both', '<td>2</td>' in index and f"<td>${2 * SPENT:.2f}</td>" in index)
+check('scan page: three runs, and the cost of all three', '<td>3</td>' in index and f"<td>${3 * SPENT:.2f}</td>" in index)
 from shelfscan import index as capture_index
 capture_index._write(store, lambda caps: [{k: v for k, v in e.items() if k not in ('runs', 'total_cost')} for e in caps])
-check('an index from before run counts is rebuilt', [e.get('runs') for e in web.recent_captures()] == [2])
+check('an index from before run counts is rebuilt', [e.get('runs') for e in web.recent_captures()] == [3])
 
 upload('extreme'); runs = wait(cid)
-check('a repeat upload with new settings still runs', len(runs) == 3 and runs[0]['photos'][0]['category'] == 'extreme')
+check('a repeat upload with new settings still runs, reading the photos again', len(runs) == 4 and runs[0]['photos'][0]['category'] == 'extreme'
+      and runs[0]['reread'])
 upload('extreme'); runs = wait(cid)
-check('the same upload again runs nothing new', len(runs) == 3)
+check('the same upload again runs nothing new', len(runs) == 4)
 
 current['b'] = dict(B, sha='c' * 40); fail.append('boom')
 c.post(f'/captures/{cid}/runs'); runs = wait(cid)
 check('a failed run on the baseline', runs[0]['status'] == 'failed')
-check('the scan page says the latest failed', '<td>4 <span class="status failed">(latest failed)</span></td>' in c.get('/').data.decode())
+check('the scan page says the latest failed', '<td>5 <span class="status failed">(latest failed)</span></td>' in c.get('/').data.decode())
 check('leaves the button enabled to retry', 'type="submit">Run against' in c.get(f'/captures/{cid}').data.decode())
 current['b'] = dict(B, dirty=True)
 page = c.get(f'/captures/{cid}').data.decode()
