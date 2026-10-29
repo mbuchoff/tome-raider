@@ -117,6 +117,18 @@ for path in OLD:
     p = c.get(f'/captures/{oc["id"]}')
     check(f'old results render ({os.path.basename(path)})', p.status_code == 200 and 'before git' in p.data.decode(), p.status_code)
 
+# on shelves read in check order, a book's check lines show in the check-order table and not again on its card
+listed = copy.deepcopy(SAMPLE)
+for s in listed['photos'][0]['shelves']: s['check_order'] = True
+listed['photos'][0]['pulls'][0]['assessment']['checks'] = ['Check for a signature: signed copies sold for a median of $987']
+lc = repo.create_capture(store, [('x.jpg', b'x')], dict(category='signed', overrides={}, minimum=None, note='', second_read=False))
+lrun = dict(id=repo.new_run_id(), capture_id=lc['id'], created='2026-10-29T12:00:00+00:00', started=None, finished=None, status='done',
+            progress='', error=None, cap=2.0, cost=listed.get('cost'), baseline=None, **repo.run_counts(listed))
+repo.save_run(store, lrun)
+store.put_json(repo.results_key(lc['id'], lrun['id']), listed)
+page = c.get(f'/captures/{lc["id"]}').data.decode()
+check('check-order shelves: the signature line shows once', 'Check order:' in page and page.count('a median of $987') == 1, page.count('a median of $987'))
+
 # marks: set on one run, shown on the page, carried to a newer run, cleared
 pull = SAMPLE['photos'][0]['pulls'][0]['book']
 key = f"1:{pull['shelf']}:{pull['x0']}"

@@ -1,5 +1,5 @@
 {
- "version": "plan-v4 with POC tuning (2026-10-29, round 8: the bookshop's answers of 28 October: whole author names, books about a person, titles identified before they are matched, first editions only for that edition, one signature line, partial sets noted)",
+ "version": "plan-v4 with POC tuning (2026-10-29, round 9: round 8's answers of 28 October, finished: given and middle names on every path, signed, first-edition and set wordings, no author-wide value for a book about someone, stricter title-only matches, no signature talk in the notes)",
   "sold_conditions_left_out": ["Sealed", "New"],
   "single_name_authors": ["Homer", "Virgil", "Vergil", "Ovid", "Horace", "Plato", "Aristotle", "Sophocles", "Euripides", "Aeschylus", "Aristophanes", "Herodotus", "Thucydides", "Xenophon", "Plutarch", "Tacitus", "Livy", "Cicero", "Seneca", "Lucretius", "Catullus", "Juvenal", "Petronius", "Apuleius", "Boethius", "Sappho", "Aesop", "Confucius", "Dante", "Petrarch", "Boccaccio", "Rumi", "Hafiz", "Voltaire", "Molière", "Moliere", "Colette", "Saki", "Stendhal", "Novalis", "Brontë", "Bronte", "Seuss"],
  "minimum_value": {

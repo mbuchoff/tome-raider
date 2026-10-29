@@ -1,6 +1,6 @@
 """Checks the bookshop's rules of 28 October 2026 on the books its notes named: whole author names, books about a person,
 titles with no author, first editions and later printings, one signature reminder, partial sets, and an author the notes
-identify. Small made-up sales; no shop data, no Claude calls.
+identify; and the follow-up fixes of 29 October (given and middle names on every path, signed, first-edition and set wordings). Small made-up sales; no shop data, no Claude calls.
 usage: python tests/rules_check.py"""
 import csv, os, sys, tempfile
 os.environ['SHELFSCAN_HOME'] = tempfile.mkdtemp()
@@ -138,5 +138,77 @@ check('a copy marked signed gets no reminder', [c for c in a['checks'] if 'signa
 # partial sets
 a = rules.assess(book('The Second World War', 'Winston S. Churchill', look='old'), 'cheap', ref, 50)
 check('two volumes of Churchill: still a pull', a['decision'], 'pull')
-check('with the set note', [c for c in a['checks'] if 'partial set' in c], ['Complete sets sold for a median of $600; a partial set is worth much less'])
+check('with the set note, from sets of its own edition (the $800 set of first editions needs a sign of one on the copy)',
+      [c for c in a['checks'] if 'partial set' in c], ['Complete sets sold for a median of $400; a partial set is worth much less'])
+
+# whole names on the title path, middle names and initials (made-up authors and titles)
+names = refdata.Reference(price_files=[sheet('names.csv', ['Title', 'Sale Price', 'Sale Date'], [
+    ['The Quiet Orchard by Jane Smith, 1950 first edition', '$300.00', 'Jun 1, 2025'],
+    ['The Quiet Orchard, John Smith, 1950', '$80.00', 'Jul 1, 2025'],
+    ['The Quiet Orchard, Smith, 1951, cloth', '$60.00', 'Aug 1, 2025'],
+    ['Lanterns of the Bayou, Tennessee Williams, 1958', '$400.00', 'Mar 1, 2025'],
+    ['Letters Home by John Paul Adams, 1940', '$500.00', 'Jan 1, 2025'],
+    ['Letters Home by John Quincy Adams, 1940', '$90.00', 'Feb 1, 2025'],
+    ['Letters Home by John Q. Adams 1941', '$70.00', 'Mar 1, 2025'],
+    ['Harbor Songs, Christopher Tolkien, 1960', '$150.00', 'Apr 1, 2025'],
+    ['Harbor Songs, J.R.R. Tolkien, 1960', '$95.00', 'May 1, 2025'],
+    ['Night Garden by Steven Kingsford, 1977 first edition', '$170.00', 'Jun 1, 2025']])])
+hits = names.comps('John Smith', 'The Quiet Orchard')[0]
+check("John Smith's copy: no value from Jane Smith's same-title sale, but the surname alone still counts",
+      sorted(h['price'] for h in hits), [60.0, 80.0])
+check("T. Harry Williams's copy: no value from Tennessee Williams's same-title sale", names.comps('T. Harry Williams', 'Lanterns of the Bayou')[0], [])
+check('John Quincy Adams: not John Paul Adams, but John Q. Adams', sorted(h['price'] for h in names.comps('John Quincy Adams', 'Letters Home')[0]), [70.0, 90.0])
+check('J. R. R. Tolkien: not Christopher Tolkien', [h['price'] for h in names.comps('J. R. R. Tolkien', 'Harbor Songs')[0]], [95.0])
+check('nor in the author-wide sales', [h['price'] for h in names.author_comps('John Quincy Adams')], [90.0, 70.0])
+check("a seller's spelling still counts (Steven for Stephen)", [h['price'] for h in names.comps('Stephen Kingsford', 'Night Garden')[0]], [170.0])
+check('C. S. Lewis is not Sinclair Lewis', names.names_fit('C. S. Lewis', 'mere words, sinclair lewis, 1930'), False)
+check('a title word before the surname is no given name ("Emma Austen")', names.names_fit('Jane Austen', 'emma austen 1816', 'Emma'), True)
+
+# signed wording, first-edition wording and set listings
+check('"with Signature" is a signed sale', rules.is_signed({'title': 'Some Novel 1953 First Print with Signature'}))
+check('"Single Signature" (a binding term) is not', rules.is_signed({'title': 'Some Novel 1957 First State Single Signature'}), False)
+check('first-edition wordings', [bool(rules.FIRST_EDITION_SALE.search(t)) for t in
+      ('First Retail Edition, First Print', 'First UK Retail Edition', '1st Print 1984', 'First US Printing', 'Second Printing 1960')],
+      [True, True, True, True, False])
+retail = refdata.Reference(price_files=[sheet('retail.csv', ['Title', 'Sale Price', 'Sale Date'], [
+    ['Glass Harbor, Ray Bradbury, 1953 First Retail Edition, First Print', '$700.00', 'Jan 1, 2025'],
+    ['Glass Harbor, Ray Bradbury, 1960s printing', '$40.00', 'Feb 1, 2025']])])
+a = rules.assess(book('Glass Harbor', 'Ray Bradbury', look='old'), 'cheap', retail, 30)
+check('a $700 "First Retail Edition" sale is no value for an unmarked copy', a['value'], 40.0)
+check('set wordings', [bool(rules.SET_LISTING.search(t)) for t in
+      ('The Long War in 6 first edition volumes', 'Border Trilogy, first editions', 'Franklin Library Signed First Editions', 'Some Novel, first edition',
+       'Some Novel, First Editions Library facsimile')],
+      [True, True, False, False, False])
+sets = refdata.Reference(price_files=[sheet('sets.csv', ['Title', 'Sale Price', 'Sale Date'], [
+    ['A Set of Nine, Joseph Conrad, 1908 first edition', '$300.00', 'Jan 1, 2025']])])
+a = rules.assess(book('A Set of Nine', 'Joseph Conrad', look='antique'), 'rare', sets, 75)
+check('a title with "set" in it is one book, not a partial set', (a['value'], [c for c in a['checks'] if 'partial set' in c]), (300.0, []))
+
+# a book about someone gets no author-wide value on extremely rare and signed shelves
+about = refdata.Reference(price_files=[sheet('about.csv', ['Title', 'Sale Price', 'Sale Date'], [
+    ['Winter Novel by Mark Schorer, 1950', '$200.00', 'Jan 1, 2025'], ['Spring Stories by Mark Schorer, 1952', '$220.00', 'Feb 1, 2025'],
+    ['Autumn Essays by Mark Schorer, 1955', '$240.00', 'Mar 1, 2025'], ['Summer Poems, Mark Schorer, signed, 1956', '$600.00', 'Apr 1, 2025']])])
+a = rules.assess(book('Sinclair Lewis', 'Mark Schorer', notes={'about': 'Sinclair Lewis', 'confidence': 'high'}), 'extreme', about, 0)
+check("about someone, on an extremely rare shelf: no rough value from the author's other books", (a['value'], a['basis']), (None, ''))
+a = rules.assess(book('Sinclair Lewis', 'Mark Schorer', notes={'about': 'Sinclair Lewis', 'confidence': 'high'}), 'signed', about, 0)
+check("nor, on a signed shelf, from the author's other signed books", (a['value'], a['basis']), (None, ''))
+a = rules.assess(book('Harvest Moon', 'Mark Schorer'), 'extreme', about, 0)
+check('a book of his own still gets the rough value', a['basis'], "this author's other books (a rough guide)")
+
+# a title on its own: two sales must share a word besides the title's, and one sale won't value a trimmed title
+alone = refdata.Reference(price_files=[sheet('alone.csv', ['Title', 'Sale Price', 'Sale Date'], [
+    ['Lighthouse Keepers, Hollis Prentiss, 1931', '$150.00', 'Jan 1, 1965'],
+    ['Lighthouse Keepers of Maine, Ada Wexford, 1902', '$150.00', 'Feb 1, 1966'],
+    ['Copper Weathervanes, Orrin Blake, 1910', '$120.00', 'Jan 1, 1966'],
+    ['Copper Weathervanes by Orrin Blake, 1910', '$140.00', 'Feb 1, 1966'],
+    ['The Velvet Orchard, 1888', '$90.00', 'Mar 1, 1966']])])
+check('two unrelated sales of a short title found on its own: nothing', alone.comps('', 'Lighthouse Keepers', old=True)[0], [])
+check('two sales naming the same author: found', len(alone.comps('', 'Copper Weathervanes', old=True)[0]), 2)
+check("one sale won't value a trimmed title (The Velvet Orchard Stories, as The Velvet Orchard)", alone.comps('', 'The Velvet Orchard Stories', old=True)[0], [])
+check('but does value the whole title', len(alone.comps('', 'The Velvet Orchard', old=True)[0]), 1)
+
+# the notes say nothing about signed copies
+a = rules.assess(book('Fahrenheit 451', 'Ray Bradbury', look='modern', notes={'first': '1953, Ballantine; also 200 signed copies in asbestos.',
+                 'points': 'Price $1.50 on the jacket. A limited issue was signed by the author.', 'confidence': 'high'}), 'cheap', ref, 50)
+check('notes: sentences about signed copies left out', (a['notes']['first'], a['notes']['points']), ('1953, Ballantine;', 'Price $1.50 on the jacket.'))
 sys.exit(1 if check.failed else 0)

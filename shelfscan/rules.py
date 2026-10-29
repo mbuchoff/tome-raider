@@ -4,24 +4,28 @@ Each book gets a decision ('pull', 'not pulled', or 'skip' for books left out si
 value from the price file when there is one, and the text for the results page."""
 import difflib, re
 from urllib.parse import quote_plus
-from .refdata import median, name_words, same_person, surnames, tokens, words
+from .refdata import SIGNED_SALE, median, name_words, same_person, surnames, tokens, words
 
 CATEGORIES = {'thrift': 'Thrift store', 'cheap': 'Cheap bookshop', 'rare': 'Rare bookshop', 'extreme': 'Extremely rare', 'signed': 'Signed shelf'}
 PAPERBACK_WORDS = re.compile(r'paperback|\bpb\b|\bpbo\b|mass market|softcover|soft cover|digest', re.I)
 # mass-market paperback publishers, used only to recognise paperback sales that don't say "paperback"
 PAPERBACK_HOUSES = re.compile(r'\b(signet|ace|bantam|dell|pocket books|pyramid|lion|avon|gold medal|popular library|berkley|fawcett|lancer|'
                               r'belmont|monarch|beacon|corgi|panther|ballantine|penguin|phantom|falcon)\b', re.I)
-SIGNED_WORDS = re.compile(r'\bsigned\b|inscribed|autograph', re.I)
+# a sentence of the notes about signed copies: the bookshop wants one signature line, from the sales, and no other
+SIGNED_MENTION = re.compile(r"\bsigned\b|\binscribed\b|autograph|author'?s signature", re.I)
 LOT_WORDS = re.compile(r'\blot of\b|\blot\b \d|\bset of\b|facsimile|reprint|book club|\bbce\b', re.I)
 # retold, abridged and children's versions of a classic: sales of the original work say nothing about them
 ADAPTATION = re.compile(r'for boys and girls|\bretold\b|\babridged\b|adapted (for|by)|junior library|classics illustrated|'
                         r'told to the children|\bsimplified\b|for young readers|children\'s edition', re.I)
 FIRST_EDITION_MARK = re.compile(r'first edition|1st edition|first printing', re.I)
 # a sale claiming the first edition: what a later printing must not be valued from (the bookshop, 28 October 2026)
-FIRST_EDITION_SALE = re.compile(r'first (?:american |english |uk |us |trade )?edition|1st (?:american |english |uk |us )?ed|first printing|1st printing|1st/1st|first impression', re.I)
+FIRST_EDITION_SALE = re.compile(r'\b(?:first|1st)\s+(?:(?:true|stated|american|english|british|uk|u\.?s\.?|trade|retail|hardcover|hardback)\s+){0,2}'
+                                r'(?:edition|ed\b|printing|print\b|impression)|1st/1st', re.I)
 # a listing of a whole set, where the copy on the shelf is usually one volume or a few
 SET_LISTING = re.compile(r'\b(?:\d+|two|three|four|five|six|seven|eight|nine|ten|twelve)[\s-]*(?:vol(?:ume)?s?\b|v\b|book set)|\bcomplete set\b|'
-                         r'\bset\b|\ball (?:first editions|volumes)\b|\bvols\b', re.I)
+                         r'\bset\b|\ball (?:first editions|volumes)\b|\bvols\b|(?<![\d/.])\b(?:[2-9]|[1-4]\d)\s+(?:[\w-]+\s+){1,3}vol(?:ume)?s\b|'
+                         r'(?<!signed )\b(?:first|1st) editions\b(?!\s+(?:library|society|club))|\btrilogy\b|\b(?:book|novel) series\b', re.I)
+# ("Signed First Editions" is an Easton series, and the First Editions Library prints facsimiles: neither is a set)
 VISIBLY_LEATHER = re.compile(r'\bleather', re.I)
 VALUABLE_FIRST = 500        # first editions selling this high are never a later printing's value without evidence on the copy
 # signs on an old spine that it may be a special copy, for lesser-known leads: illustrations, translations, small presses
@@ -127,7 +131,16 @@ def same_imprint(imprint, notes):
 
 def is_signed(h):
     """A signed sale: its listing says so, or its file's Signed column does (Easton Press and Franklin Library)."""
-    return bool(h.get('signed')) or bool(SIGNED_WORDS.search(h['title']))
+    return bool(h.get('signed')) or bool(SIGNED_SALE.search(h['title']))
+
+
+def without_signatures(notes):
+    """The notes with any sentence about signed copies left out."""
+    out = dict(notes)
+    for k in ('first', 'points', 'watch'):
+        if isinstance(out.get(k), str):
+            out[k] = ' '.join(x for x in re.split(r'(?<=[.;])\s+', out[k]) if not SIGNED_MENTION.search(x)).strip()
+    return out
 
 
 def relevant_comps(hits, fmt, signed_ok, house=None):
@@ -169,7 +182,7 @@ def assess(b, category, ref, minimum):
     if clean(foot.get('imprint')) and (not imprint or '?' in imprint): imprint = clean(foot['imprint'])
     text = ' '.join([author, title, imprint, marks, b.get('spine_text') or '', b.get('appearance') or '', foot_text])
     out = dict(decision='skip', reason='', signals=[], value=None, comps=[], quick=[], why='', edition='', basis='', strength=0)
-    if b.get('notes'): out['notes'] = b['notes']                 # written once by the notes call, kept with the reading
+    if b.get('notes'): out['notes'] = without_signatures(b['notes'])     # written once by the notes call, kept with the reading
     notes = b.get('notes') or {}
     out['checks'] = []          # check lines written once per book: a possible signature, a possible first edition, a partial set
     # a second look for a book with no author, or only one name (a surname or a publisher): the notes call identifies it
@@ -236,7 +249,7 @@ def assess(b, category, ref, minimum):
     # other editions: a sale dated outside the copy's own years, a first edition from another publisher than the copy's, or
     # a valuable first-edition sale ($500 and up) with nothing on the copy to say it is one, values a later printing at nothing
     lo, hi = era(look, year)
-    shows_first = bool(re.search(r'first edition|1st edition|first printing|1st printing', marks, re.I))
+    shows_first = bool(FIRST_EDITION_SALE.search(marks))
     pub = same_imprint(imprint, notes)
     evidence = shows_first or bool(pub and year)        # something on the copy says it may be the first edition
     first_year = min((int(y) for y in re.findall(r'(?<!\d)(1[5-9]\d\d|20[0-2]\d)(?!\d)', notes.get('first') or '')), default=None)
@@ -247,12 +260,14 @@ def assess(b, category, ref, minimum):
             return pub is False or (h['price'] >= VALUABLE_FIRST and not evidence)
         return False
     # partial sets: single volumes value a volume; where the title sold only as whole sets, the copy is still listed, with
-    # the sets' price as a ceiling it won't reach (the bookshop: "worth much less than a complete set")
-    whole_sets = [h for h in comps if SET_LISTING.search(h['title'])]
+    # the sets' price, from sets of its own edition, as a ceiling it won't reach (the bookshop: "worth much less than a
+    # complete set")
+    whole_sets = [h for h in comps if SET_LISTING.search(h['title'])] if not SET_LISTING.search(title) else []   # "A Set of Six" is one book
     only_sets = bool(whole_sets) and len(whole_sets) == len(comps)
+    own_sets = [h for h in whole_sets if not other_edition(h)]
     if whole_sets and not only_sets: comps = [h for h in comps if not SET_LISTING.search(h['title'])]
-    elif whole_sets:
-        out['checks'].append(f"Complete sets sold for a median of {fmt_money(median([h['price'] for h in whole_sets]))}; a partial set is worth much less")
+    elif own_sets:
+        out['checks'].append(f"Complete sets sold for a median of {fmt_money(median([h['price'] for h in own_sets]))}; a partial set is worth much less")
     elsewhere = [h for h in comps if other_edition(h)]
     comps = [h for h in comps if not other_edition(h)]
     if comps:
@@ -295,7 +310,7 @@ def assess(b, category, ref, minimum):
         return out
 
     # on shelves read in check order, an author with several sales in the price file is enough to list the book
-    ac = same_house(ref.author_comps(author), house) if check_order else []
+    ac = same_house(ref.author_comps(author), house) if check_order and not about else []     # a book about someone: its own sales only
     any_signal = bool(comps or freq or watch or ill or imp or mk or wl or len(ac) >= 3)
     # on rare shelves, an old book with no evidence in the price file can still be a lesser-known lead: an old book whose spine
     # shows illustrations, a translation or a small press, or on a rare shelf any antique. On shelves read in check order
@@ -348,7 +363,7 @@ def assess(b, category, ref, minimum):
     if check_order:
         # no minimum: every candidate is listed, ordered by the likeliest value the evidence gives
         st = [h for h in comps if is_signed(h)] if signed_copy else []
-        sc = same_house(ref.signed_comps(author), house) if signed_copy and not st else []
+        sc = same_house(ref.signed_comps(author), house) if signed_copy and not st and not about else []
         if st: estimate(st, 'signed copies of this title')
         elif sc and (val is None or median([h['price'] for h in sc]) >= val): estimate(sc, 'signed copies by this author')
         elif comps:

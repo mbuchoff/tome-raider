@@ -1,0 +1,42 @@
+# Given names, for telling an author's sales from a namesake's: a listing that prints one of these (or an initial) just
+# before the copy author's surname, and it isn't the author's own, is another person's book (Jane Smith's, not John Smith's).
+# Words that are just as often ordinary words (may, grace, hope, art, pearl, june) are left out: a name missing here only
+# means the listing is kept. The authors in the price files and the author lists are added to these when the app starts.
+aaron abby abigail abraham ada adam adelaide adele adolph adrian agatha agnes aileen alan alastair albert alberto aldous
+alec alejandro aleksandr alex alexander alexandre alexis alfred alfredo algernon alice alicia alison allan allen alma
+alois alphonse alvin amanda amelia amos amy anaïs anais anatole andre andré andrea andreas andrew andy angela angus anita
+ann anna anne annie anthony antoine anton antonio archibald arnold arthur astrid audrey august augusta augustus aurora
+austin ava barbara barnaby barry bartholomew basil beatrice beatrix ben benedict benjamin bernard bernhard bertha
+bertrand beryl bessie betsy betty beverly bill billy blaise bob bobby boris bram brendan brian bruce bryan bud byron
+calvin carl carlo carlos carmen carol caroline carolyn carson cecil cecilia cedric charles charlie charlotte chester
+chinua chris christa christian christina christine christopher clara clare clarence clark claude claudia clement cleveland
+clifford clint clive colette colin colleen conrad constance cora cormac cornelius craig curtis cynthia cyril cyrus daisy
+dale dan daniel daphne darrell dashiell dave david deborah denis dennis derek diana diane dick dina dolores dominic
+don donald donna dora doris dorothy doug douglas dwight ed eddie edgar edith edmund edna eduardo edward edwin eileen
+elaine eleanor elena eli elias elijah elinor eliot eliza elizabeth ella ellen elliot ellis elmer elmore elsa elsie
+elspeth emil emile émile emilio emily emma emmanuel eric erich erik ernest ernesto ernst errol esther ethan ethel eudora
+eugene eva evan evelyn ezra federico felix ferdinand fernando flannery fletcher flora florence ford frances francesca
+francis francisco franco frank frankie franz fred freda frederic frederick frederik friedrich fritz fyodor gabriel
+gabriela gail garrison gary gene geoffrey george georg georges georgia gerald gerard gerhard gertrude gilbert giles gillian
+gina giovanni giuseppe gladys glen glenn gloria gordon graham grant greg gregory gunter günter gustav gustave guy
+gwendolyn hal hamlin hank hannah hans harlan harold harper harriet harry harvey hazel heinrich helen helena henri henrik
+henry herbert herman hermann hilaire hilary hilda homer horace horatio howard hubert hugh hugo ian ida ingrid irene irving
+irwin isaac isabel isabella isak isaiah italo ivan jack jacob jacqueline jacques jake james jamie jan jane janet janice
+jason jay jean jeanette jeanne jeff jefferson jeffrey jennifer jenny jeremy jerome jerry jesse jessica jim jimmy joan
+joanna joanne joe joel johann johannes john johnny jon jonathan jorge jose josé joseph josephine joshua joyce juan
+judith judy jules julia julian julie julius justin karen karl kate katharine katherine kathleen kathryn katie kay keith
+kenneth kent kevin kingsley kirk kurt lafcadio langston larry laura laurence lawrence lee leigh lena leo leon leonard
+leonardo leopold leroy leslie lester lev lewis lillian linda lionel lisa lloyd lois lorraine lou louis louisa
+louise lucas lucia lucille lucy ludwig luis luke lydia lyman lynn mabel madeleine malcolm marcel marcus margaret
+margarita margery maria marian marie marilyn mario marion marjorie mark marsha martha martin marvin mary mathew matilda
+matthew maud maude maureen maurice max maxim maxwell melville michael michel miguel mikhail mildred miles milton miriam
+mitchell molly mona morris muriel nancy naomi natalie nathan nathaniel neal ned neil nell nelson nicholas nick nicolas
+nikolai noel nora norman octavia olaf oliver olivia orson oscar otto owen pablo pamela patricia patrick paul paula
+pauline peggy percy pete peter phil philip phillip phyllis pierre rachel rafael ralph randall randolph ray raymond
+rebecca reginald rex richard rick ricky rita rob robert roberta roberto robin rod roderick rodney roger roland ronald
+rosa rosalind ross rowena roy rudolf rudyard rufus russell ruth ryan sally salman salvador sam samuel sandra sara sarah
+saul scott seamus sean sebastian selma seymour sharon sheila shelby shirley sidney simon sinclair sophia sophie stanley
+stefan stella stephen steve steven stuart susan sylvia ted terence teresa terry thea theo theodor theodore theresa thomas
+thornton tim timothy toby todd tom tommy toni tony tracy truman ulysses umberto ursula valerie vera vernon victor
+victoria vincent viola virginia vivian vladimir walker wallace walt walter wanda warren washington wayne wendell wendy
+wilbur wilfred wilhelm will willa willard william willie wilson winifred winston wolfgang wyndham yvonne zane zelda zora

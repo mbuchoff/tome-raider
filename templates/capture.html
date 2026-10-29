@@ -10,7 +10,7 @@
   {%- else %}About ${{ '%.2f' % (r.cost.spent / n) }} a photo: this run kept only its total{% endif %}</div></details>{% endif %}{% endmacro %}
 {% macro where(b) %}Shelf {{ b.shelf }} from the top, {{ ordinal(b.pos) }} of {{ b.of }} from the left{% if 'flat' in (b.marks or '')|lower %}, lying flat{% endif %}{% endmacro %}
 {% macro look_for(b) %}{{ b.appearance or '—' }}{% if b.format and b.format != 'unclear' %}; {{ b.format }}{% endif %}{% if b.jacket == 'yes' %}, in jacket{% endif %}{% if b.imprint and 'unreadable' not in b.imprint and b.imprint.strip('?. ') %}; {{ b.imprint }}{% endif %}{% endmacro %}
-{% macro card(x, pi, kind) %}
+{% macro card(x, pi, kind, listed=False) %}{# listed: its check lines are in the check-order table above #}
 {% set b = x.book %}{% set a = x.assessment %}{% set copies = x.copies or [] %}
 <div class="card pull">
   <a href="{{ file_url(x.thumb) }}"><img src="{{ file_url(x.thumb) }}" alt="Spine of {{ x.label }}"></a>
@@ -24,7 +24,7 @@
       {% if a.notes %}<dt>First edition</dt><dd>{{ a.notes.first }}{% if a.notes.confidence %} <span class="muted small">(Claude's notes, {{ a.notes.confidence }} confidence)</span>{% endif %}</dd>
       {% if a.notes.points %}<dt>Points</dt><dd>{{ a.notes.points }}</dd>{% endif %}
       {% if a.notes.watch %}<dt>Watch for</dt><dd>{{ a.notes.watch }}</dd>{% endif %}{% endif %}
-      {% set checks = (a.checks or []) + a.quick %}{% if checks %}<dt>Check</dt><dd>{{ checks|join('. ') }}</dd>{% endif %}
+      {% set checks = ([] if listed else a.checks or []) + a.quick %}{% if checks %}<dt>Check</dt><dd>{{ checks|join('. ') }}</dd>{% endif %}
       {% if copies %}<dt>Other copies</dt><dd>The copy above looks the most promising. Check these too:
         {% for c in copies %}<div class="copy small">{% if c.thumb %}<a href="{{ file_url(c.thumb) }}"><img src="{{ file_url(c.thumb) }}" alt="Spine of another copy of {{ x.label }}"></a>{% endif %}
           <span>{{ where(c.book) }}: {{ look_for(c.book) }}; {{ c.book.look }}{% if c.assessment.value and c.assessment.value != a.value %}; about ${{ '{:,.0f}'.format(c.assessment.value) }}{% endif %}</span></div>{% endfor %}</dd>{% endif %}
@@ -114,7 +114,7 @@
 <h3 style="margin-top:1.25rem">{{ ph.pulls|length }} worth pulling</h3>
 {% if not ph.pulls %}<p class="muted">Nothing met the rules for this shelf category.</p>{% endif %}
 {% endif %}
-{% for x in ph.pulls %}{{ card(x, pi, 'pull') }}{% endfor %}
+{% for x in ph.pulls %}{{ card(x, pi, 'pull', check) }}{% endfor %}
 
 {% if ph.leads %}
 <h3 style="margin-top:1.25rem">{{ ph.leads|length }} lesser-known lead{{ 's' if ph.leads|length != 1 }}</h3>

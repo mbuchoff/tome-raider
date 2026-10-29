@@ -11,7 +11,7 @@ A sale found in an earlier file with the same title, price and date is loaded on
 Press and Franklin Library) lose the conditions rules.json leaves out (sold_conditions_left_out); a Signed column marks
 signed sales whose listing title doesn't say so. Lookups go through a word index: each one reads only the sales holding its
 rarest word, never every sale."""
-import collections, csv, datetime, hashlib, json, os, re, statistics
+import collections, csv, datetime, difflib, hashlib, json, os, re, statistics
 from .xlsx_read import read as read_xlsx
 
 DATA = os.environ.get('SHELFSCAN_DATA') or os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'data')
@@ -161,16 +161,18 @@ library club paperback softcover pb new used free shipping stated true author by
 
 
 def one_book(hits, phrase):
-    """Whether listings found by a title alone are all one book: with three or more, a word other than the title's own
-    (usually the author's name: Alcott for "Little Women") appears in half of them. "World War II" or "Who's Who" find
-    listings of dozens of different books that share no such word."""
-    if len(hits) < 3: return True
+    """Whether listings found by a title alone are all one book: a word other than the title's own (usually the author's
+    name: Alcott for "Little Women") appears in half of them, and in both when there are two. "World War II" or "Who's Who"
+    find listings of different books that share no such word. A single listing is taken as it is, and so are two of a title
+    with three distinctive words, which is one book on its own."""
     own = set(tokens(phrase))
+    if len(hits) < 2 or (len(hits) == 2 and sum(len(w) > 2 and w not in STOP and w not in GENERIC for w in own) >= 3): return True
     counts = collections.Counter()
     for r in hits:
         counts.update({w for w in tokens(r['text']) if len(w) > 2 and not w.isdigit() and w not in own and w not in STOP
                        and w not in GENERIC and w not in LISTING_WORDS})
-    return bool(counts) and counts.most_common(1)[0][1] * 2 >= len(hits)
+    top = counts.most_common(1)[0][1] if counts else 0
+    return top >= 2 and top * 2 >= len(hits)
 
 
 def same_person(a, b, single_names=()):
@@ -184,6 +186,64 @@ def same_person(a, b, single_names=()):
     ga, gb = goes_by(pa[:-1]), goes_by(pb[:-1])
     if ga and gb: return fold(ga) == fold(gb)
     return fold(pa[0])[0] == fold(pb[0])[0]
+
+
+# a sale whose listing says it is signed. "Single signature" is a binding term, not an autograph.
+SIGNED_SALE = re.compile(r"\bsigned\b|inscribed|autograph|(?:\bwith\s+|\bw/\s*)(?:(?:his|her|the|an?|author'?s?|original|tipped[- ]in)\s+){0,2}"
+                         r"signature\b|\btipped[- ]in signature\b", re.I)
+
+
+def same_name(a, b):
+    """One given name, allowing a seller's spelling (Steven for Stephen, Phillip for Philip): the same first two letters
+    and most of the rest. Jane and John, or Harry and Henry, differ."""
+    a, b = a.lower().strip('.'), b.lower().strip('.')
+    return a == b or (a[:2] == b[:2] and difflib.SequenceMatcher(None, a, b).ratio() >= 0.75)
+
+
+def names_agree(mine, printed):
+    """Whether the given names a listing prints with an author's surname can be the copy author's (mine, as name_words
+    gives them): the names they go by agree (Jane is not John, Tennessee is not T. Harry), or the initials do where one
+    side gives only initials (Christopher is not J. R. R.); and where both give a middle name, the last ones agree (John
+    Paul Adams is not John Quincy Adams, nor John Q. Adams). A middle name only one of them prints is no disagreement."""
+    f = lambda w: w.lower().strip('.')
+    spelled = lambda ws: [w for w in ws if not INITIALS.fullmatch(w)]
+    ga, gb = goes_by(mine), goes_by(printed)
+    if not gb: return all(f(w)[0] in {f(x)[0] for x in mine} for w in printed)      # initials, or a middle initial alone
+    if not ga: return f(gb)[0] == f(mine[0])[0]          # C. S. Lewis goes by his first initial's name, not Sinclair
+    if not any(same_name(ga, w) for w in spelled(printed)) and not any(same_name(gb, w) for w in spelled(mine)): return False
+    ma, mb = mine[mine.index(ga) + 1:], printed[printed.index(gb) + 1:]
+    if ma and mb:
+        a, b = ma[-1], mb[-1]
+        return f(a)[0] == f(b)[0] if INITIALS.fullmatch(a) or INITIALS.fullmatch(b) else same_name(a, b)
+    return True
+
+
+def printed_given(text, surname, known, skip=()):
+    """The given names a listing prints with each mention of a surname: the words just before it ("jane smith"), or just
+    after it where it comes first ("smith, jane"), as long as they are initials or known given names and not words of the
+    book's title (skip). One list per mention, empty where no given name is printed."""
+    def part(w):
+        w = w.strip('.') + ('.' if w.endswith('.') else '')
+        if re.fullmatch(r'(?:[a-z]\.){2,3}', w): return re.findall(r'[a-z]\.', w)            # "j.r.r." -> j. r. r.
+        if re.fullmatch(r'[a-z]\.|[b-hj-z]', w): return [w]
+        b = w.rstrip('.')
+        return [b] if b in known and b not in skip else None
+    out = []
+    for m in re.finditer(r'(?<![\w\'])' + re.escape(surname).replace('e', '[eë]') + r'(?![\w\'])', text):
+        run = []
+        for w in reversed(text[:m.start()].split()[-4:]):
+            p = None if re.search(r'[,;:/()]$', w) else part(w)
+            if p is None or len(run) >= 3: break
+            run[:0] = p
+        if not run:
+            after = re.match(r'\s*,\s*(.*)', text[m.end():])
+            for w in (after.group(1).split()[:3] if after else []):
+                p = part(re.sub(r'[,;:]$', '', w))
+                if p is None: break
+                run += p
+                if re.search(r'[,;:]$|\w\w\.$', w): break          # "smith, jane. the garden"
+        out.append(run)
+    return out
 
 
 TOKEN = re.compile(r'[a-z0-9]+')      # the index's words: a word-bounded match of a text always holds each of these whole
@@ -240,6 +300,8 @@ class Reference:
             for t in set(tokens(r['text'])): self._index[t].append(i)
         self._collections = None
         self._author_names = None          # built on first use, by is_author_name
+        names = open(os.path.join(data_dir, 'given-names.txt')).read()
+        self.given_names = set(re.sub(r'#.*', ' ', names).split())
         self.single_names = {w.lower().replace('ë', 'e') for w in self.rules.get('single_name_authors', [])} | \
                             {w.lower() for w in self.rules.get('single_name_authors', [])}
         lines = open(os.path.join(data_dir, 'frequent-authors.tsv')).read().splitlines()[1:]
@@ -249,6 +311,8 @@ class Reference:
             if len(f) >= 3 and name_rx(f[1], self.single_names): self.frequent.append((f[1], name_rx(f[1], self.single_names), money(f[2])))
         self.watch = [(n, name_rx(n, self.single_names)) for n in open(os.path.join(data_dir, 'watchlist.txt')).read().splitlines()
                       if n.strip() and name_rx(n, self.single_names)]
+        for n in {r['author'] for r in self.prices if r['author']} | {n for n, *_ in self.frequent} | {n for n, _ in self.watch}:
+            self.given_names |= {w.lower().strip('.') for w in name_words(n)[:-1] if not INITIALS.fullmatch(w) and w[:1].isalpha()}
         R = self.rules
         self.rx = {k: re.compile(R[k], re.I) for k in ('book_club_sure', 'book_club_possible', 'reprint_publishers', 'collectible_imprints',
                                                        'collectible_marks', 'false_friend_authors', 'illustrators')}
@@ -291,6 +355,20 @@ class Reference:
             self._author_names = {' '.join(w.lower().strip('.') for w in name_words(n)) for n in names if len(name_words(n)) >= 2}
         return ' '.join(w.lower().strip('.') for w in ws) in self._author_names
 
+    def names_fit(self, author, text, title=''):
+        """False when a listing prints the author's surname only with someone else's given names: Jane Smith's sale for John
+        Smith's book, Tennessee Williams's for T. Harry Williams's, John Paul Adams's for John Quincy Adams's. A mention with
+        no given name printed, or a surname alone on the spine, is no disagreement."""
+        skip, agree, disagree = set(tokens(title)), False, False
+        for n in re.split(r'\s+(?:and|&|with)\s+|;', re.sub(r'\(.*?\)', ' ', author or '')):
+            ws = name_words(n)
+            if len(ws) < 2: continue
+            for printed in printed_given(text, ws[-1].lower().strip('.').replace('ë', 'e'), self.given_names, skip):
+                if not printed: continue
+                if names_agree(ws[:-1], printed): agree = True
+                else: disagree = True
+        return agree or not disagree
+
     def find_frequent(self, author):
         if not author: return None
         return next(((n, med) for n, rx, med in self.frequent if rx.search(author) and same_person(n, author, self.single_names)), None)
@@ -311,7 +389,8 @@ class Reference:
         surs = surnames(author)
         if surs:
             srx = re.compile(r'\b(' + '|'.join(map(re.escape, surs)) + r')\b')
-            by_author = [r for r in self.having(*surs) if any(s in r['text'] for s in surs) and srx.search(r['text'])]
+            by_author = [r for r in self.having(*surs) if any(s in r['text'] for s in surs) and srx.search(r['text'])
+                         and self.names_fit(author, r['text'], title)]
             main = re.split(r'\s*[:;(]|\s+-\s+', title or '')[0]          # 'Bambi: A Life in the Woods' -> 'Bambi'
             for t in dict.fromkeys([title, main]):
                 trx = title_rx(t, short_ok=True)
@@ -323,24 +402,25 @@ class Reference:
                 hits = [r for r in self.having(lookup_words(title)) if trx.search(r['text'])]
                 if hits and one_book(hits, title): return hits, False
         if old and not about:
+            whole = ' '.join(words(re.sub(r'\(.*?\)|\?|\.\.\.|…', ' ', title or '')))
             for t in title_cores(title):
                 trx = title_rx(t)
                 hits = [r for r in self.having(lookup_words(t)) if trx and trx.search(r['text']) and not (r['year'] and r['year'] >= 1970)]
-                if hits and one_book(hits, t): return hits, False
+                if hits and one_book(hits, t) and (len(hits) > 1 or t == whole): return hits, False      # one sale won't value a trimmed title
         return [], bool(surs)
 
     def signed_comps(self, author):
         rx = name_rx(author, self.single_names) if author else None
         if not rx: return []
-        return [r for r in self.having(name_key(author)) if rx.search(r['text']) and (r['signed'] or re.search(r'\bsigned\b|inscribed|autograph', r['text']))]
+        return [r for r in self.having(name_key(author)) if rx.search(r['text']) and self.names_fit(author, r['text']) and (r['signed'] or SIGNED_SALE.search(r['text']))]
 
 
     def author_comps(self, author):
         """Unsigned single-copy sales of anything by this author: a rough guide to a book whose own title has no sales."""
         rx = name_rx(author, self.single_names) if author else None
         if not rx: return []
-        return [r for r in self.having(name_key(author)) if rx.search(r['text']) and not r['signed']
-                and not re.search(r'\bsigned\b|inscribed|autograph|\blot\b|\bset of\b|facsimile|reprint', r['text'])]
+        return [r for r in self.having(name_key(author)) if rx.search(r['text']) and self.names_fit(author, r['text']) and not r['signed']
+                and not SIGNED_SALE.search(r['text']) and not re.search(r'\blot\b|\bset of\b|facsimile|reprint', r['text'])]
 
 
 def surname(author):
