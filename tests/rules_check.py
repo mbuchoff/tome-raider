@@ -184,6 +184,15 @@ sets = refdata.Reference(price_files=[sheet('sets.csv', ['Title', 'Sale Price', 
 a = rules.assess(book('A Set of Nine', 'Joseph Conrad', look='antique'), 'rare', sets, 75)
 check('a title with "set" in it is one book, not a partial set', (a['value'], [c for c in a['checks'] if 'partial set' in c]), (300.0, []))
 
+multi = refdata.Reference(price_files=[sheet('multi.csv', ['Title', 'Sale Price', 'Sale Date'], [
+    ['The Long Winter War, Hugh Marsh, Complete First Edition 1931-1936', '$400.00', 'Jan 1, 2025'],
+    ['The Long Winter War, Hugh Marsh, volume 2, first edition 1932', '$40.00', 'Feb 1, 2025']])])
+war = dict(look='old', notes={'first': 'Four vols, London: Harrap, 1931-36.', 'confidence': 'high'})
+a = rules.assess(book('The Long Winter War', 'Hugh Marsh', **war), 'cheap', multi, 30)
+check('a work first published in several volumes: "Complete ... 1931-1936" is a set', a['value'], 40.0)
+check('a range alone dates one book otherwise', bool(rules.SET_LISTING.search('The Hobbit, first edition 1937-1966')), False)
+check('"Harpers" on the spine is Harper & Brothers in the notes', rules.same_imprint('Harpers', {'first': '1904, Harper & Brothers, London'}), True)
+
 # a book about someone gets no author-wide value on extremely rare and signed shelves
 about = refdata.Reference(price_files=[sheet('about.csv', ['Title', 'Sale Price', 'Sale Date'], [
     ['Winter Novel by Mark Schorer, 1950', '$200.00', 'Jan 1, 2025'], ['Spring Stories by Mark Schorer, 1952', '$220.00', 'Feb 1, 2025'],

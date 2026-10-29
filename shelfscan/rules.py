@@ -20,12 +20,16 @@ ADAPTATION = re.compile(r'for boys and girls|\bretold\b|\babridged\b|adapted (fo
 FIRST_EDITION_MARK = re.compile(r'first edition|1st edition|first printing', re.I)
 # a sale claiming the first edition: what a later printing must not be valued from (the bookshop, 28 October 2026)
 FIRST_EDITION_SALE = re.compile(r'\b(?:first|1st)\s+(?:(?:true|stated|american|english|british|uk|u\.?s\.?|trade|retail|hardcover|hardback)\s+){0,2}'
-                                r'(?:edition|ed\b|printing|print\b|impression)|1st/1st', re.I)
+                                r'(?:edition|eds?\b|printing|print\b|impression)|1st/1st', re.I)
 # a listing of a whole set, where the copy on the shelf is usually one volume or a few
 SET_LISTING = re.compile(r'\b(?:\d+|two|three|four|five|six|seven|eight|nine|ten|twelve)[\s-]*(?:vol(?:ume)?s?\b|v\b|book set)|\bcomplete set\b|'
                          r'\bset\b|\ball (?:first editions|volumes)\b|\bvols\b|(?<![\d/.])\b(?:[2-9]|[1-4]\d)\s+(?:[\w-]+\s+){1,3}vol(?:ume)?s\b|'
                          r'(?<!signed )\b(?:first|1st) editions\b(?!\s+(?:library|society|club))|\btrilogy\b|\b(?:book|novel) series\b', re.I)
 # ("Signed First Editions" is an Easton series, and the First Editions Library prints facsimiles: neither is a set)
+# a work the notes say first came in several volumes ("Six vols"): its listings that say "complete" or span years
+# ("1948-1953") are whole sets too, though a range alone usually dates one book ("The Hobbit 1937-1966")
+MULTI_VOLUME = re.compile(r'\b(?:\d+|two|three|four|five|six|seven|eight|nine|ten|twelve)\s+vol', re.I)
+WHOLE_WORK = re.compile(r'\bcomplete\b|(?<!\d)(?:1[5-9]\d\d|20[0-2]\d)\s*[-–—]\s*(?:\d{2}|\d{4})(?!\d)', re.I)
 VISIBLY_LEATHER = re.compile(r'\bleather', re.I)
 VALUABLE_FIRST = 500        # first editions selling this high are never a later printing's value without evidence on the copy
 # signs on an old spine that it may be a special copy, for lesser-known leads: illustrations, translations, small presses
@@ -113,17 +117,22 @@ def era(look, year):
     return {'antique': (1450, 1930), 'old': (1915, 1975), 'modern': (1960, 2100)}.get(look, (1450, 2100))
 
 
+def imprint_word(w):
+    """A publisher's name word, with a final s dropped: 'Harpers' is Harper & Brothers, 'Scribners' Scribner."""
+    return w[:-1] if len(w) > 4 and w.endswith('s') else w
+
+
 def first_publishers(notes):
     """The words naming the first edition's publishers in the notes ('1932, Chatto & Windus, London; US: Doubleday'):
     cities, years and little words left out."""
     t = re.sub(r'\b(london|new york|boston|philadelphia|paris|chicago|edinburgh|toronto|garden city|indianapolis|us|uk)\b', ' ',
                (notes or {}).get('first') or '', flags=re.I)
-    return {w for w in tokens(t) if len(w) > 2 and not w.isdigit() and w not in ('and', 'the', 'company', 'press', 'publishers', 'inc', 'ltd', 'sons')}
+    return {imprint_word(w) for w in tokens(t) if len(w) > 2 and not w.isdigit() and w not in ('and', 'the', 'company', 'press', 'publishers', 'inc', 'ltd', 'sons')}
 
 
 def same_imprint(imprint, notes):
     """None when the copy's publisher or the first edition's is unknown; else whether they share a name ('Knopf')."""
-    have = {w for w in tokens(imprint) if len(w) > 2 and w not in ('the', 'and', 'company', 'press', 'publishers', 'inc', 'ltd', 'sons', 'books')}
+    have = {imprint_word(w) for w in tokens(imprint) if len(w) > 2 and w not in ('the', 'and', 'company', 'press', 'publishers', 'inc', 'ltd', 'sons', 'books')}
     first = first_publishers(notes)
     if not have or not first: return None
     return bool(have & first)
@@ -262,10 +271,12 @@ def assess(b, category, ref, minimum):
     # partial sets: single volumes value a volume; where the title sold only as whole sets, the copy is still listed, with
     # the sets' price, from sets of its own edition, as a ceiling it won't reach (the bookshop: "worth much less than a
     # complete set")
-    whole_sets = [h for h in comps if SET_LISTING.search(h['title'])] if not SET_LISTING.search(title) else []   # "A Set of Six" is one book
+    multi = bool(MULTI_VOLUME.search(notes.get('first') or ''))
+    def is_set(h): return bool(SET_LISTING.search(h['title']) or (multi and WHOLE_WORK.search(h['title'])))
+    whole_sets = [h for h in comps if is_set(h)] if not SET_LISTING.search(title) else []   # "A Set of Six" is one book
     only_sets = bool(whole_sets) and len(whole_sets) == len(comps)
     own_sets = [h for h in whole_sets if not other_edition(h)]
-    if whole_sets and not only_sets: comps = [h for h in comps if not SET_LISTING.search(h['title'])]
+    if whole_sets and not only_sets: comps = [h for h in comps if h not in whole_sets]
     elif own_sets:
         out['checks'].append(f"Complete sets sold for a median of {fmt_money(median([h['price'] for h in own_sets]))}; a partial set is worth much less")
     elsewhere = [h for h in comps if other_edition(h)]
