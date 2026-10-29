@@ -16,10 +16,13 @@ from .xlsx_read import read as read_xlsx
 
 DATA = os.environ.get('SHELFSCAN_DATA') or os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'data')
 DEFAULT_PRICE_FILES = ['sales_report.xlsx', 'master_list_2022.xlsx', 'first_editions.xlsx', 'easton_franklin.xlsx', 'special_editions.csv',
-                       'specialty_genres.csv']
+                       'specialty_genres.csv', 'paperback_bookclub.csv']
 # files used only for a title or author the others have no sales of: the bookshop's Specialty Genres file (occult, sciences,
 # travel...) is full of antiquarian listings that would otherwise value ordinary later copies of classics
 SUPPLEMENTARY = {'specialty_genres.csv'}
+# a file's Book Type column: the bookshop's paperback and book-club list, whose sales are of first-edition paperbacks and of
+# book-club editions. They value only a copy of their own kind, never an ordinary hardcover (comps(kind=...)).
+KINDS = {'paperback': re.compile(r'paperback', re.I), 'book club': re.compile(r'club', re.I)}
 
 
 def fetch(names, cache=None):
@@ -42,7 +45,8 @@ def fetch(names, cache=None):
 # header names seen in the provided files, lower case; the first one present wins
 COLUMNS = {'title': ['title', 'full title', 'item title'], 'price': ['sale price', 'price', 'sold price'],
            'date': ['sale date', 'sell date', 'sold date', 'date'], 'author': ['author'], 'url': ['ebay link', 'item url', 'url', 'link'],
-           'image': ['image link'], 'condition': ['condition'], 'signed': ['signed'], 'publisher': ['publisher']}
+           'image': ['image link'], 'condition': ['condition'], 'signed': ['signed'], 'publisher': ['publisher'],
+           'kind': ['book type']}
 YEAR = re.compile(r'(?<!\d)(1[5-9]\d\d|20[0-2]\d)(?!\d)')
 STOP = set('the a an of and in on to for with by from at is my your our his her its this that'.split())
 # words that don't identify a work on their own: "Selected Poems" or "Fairy Tales" could be anyone's
@@ -78,8 +82,8 @@ def _tables(path):
 
 
 def load_prices(paths):
-    """Rows of dict(title, author, price, date, year, url, item, image, condition, signed, publisher, text). A repeated eBay
-    item number loads once. So does a dated sale an earlier file already holds (same title, price and date, and no
+    """Rows of dict(title, author, price, date, year, url, item, image, condition, signed, publisher, kind, text). A repeated eBay
+    item number loads once. So does a dated sale an earlier file already holds (same title, price, date and kind, and no
     different item number): what the later file adds (condition, signed, publisher, image) goes onto the first."""
     rows, seen, files, earlier = [], set(), [], {}       # earlier: (title, price, date) -> the row an earlier file gave
     for path in paths:
@@ -104,8 +108,9 @@ def load_prices(paths):
                 image = str(get('image') or '').strip()
                 row = dict(file=os.path.basename(path), title=title, author=(get('author') or '').strip(), price=price, date=date, url=url if url.startswith('http') else '',
                            item=item, image=image if image.startswith('http') else '', condition=str(get('condition') or '').strip(),
-                           signed=str(get('signed') or '').strip().lower() in ('yes', 'y', 'true', '1'), publisher=str(get('publisher') or '').strip())
-                key = (title.lower(), round(price, 2), date)
+                           signed=str(get('signed') or '').strip().lower() in ('yes', 'y', 'true', '1'), publisher=str(get('publisher') or '').strip(),
+                           kind=next((k for k, rx in KINDS.items() if rx.search(str(get('kind') or ''))), ''))
+                key = (title.lower(), round(price, 2), date, row['kind'])     # a paperback or book-club sale stays in its own pool
                 first = earlier.get(key) if date else None          # an undated sale is never taken for another
                 if first is not None and not (item and first['item'] and item != first['item']):
                     for k in ('condition', 'publisher', 'image', 'item', 'url', 'author'):      # what this file knows that the first didn't
@@ -389,16 +394,18 @@ class Reference:
         if not author: return None
         return next((n for n, rx in self.watch if rx.search(author) and same_person(n, author, self.single_names)), None)
 
-    def comps(self, author, title, old=False, about=False):
+    def comps(self, author, title, old=False, about=False, kind=''):
         """Sold listings for this title, and whether they were matched together with the author: from the main price files,
-        or from the supplementary ones (SUPPLEMENTARY) when the main ones have none."""
+        or from the supplementary ones (SUPPLEMENTARY) when the main ones have none. kind: 'paperback' or 'book club' looks only
+        in the sales of that kind (KINDS), which no other lookup sees."""
+        if kind: return self._comps(author, title, old, about, main_only=False, kind=kind)
         hits, known = self._comps(author, title, old, about, main_only=True)
         return (hits, known) if hits else self._comps(author, title, old, about, main_only=False)
 
-    def _pool(self, rows, main_only):
-        return [r for r in rows if r.get('file') not in SUPPLEMENTARY] if main_only else rows
+    def _pool(self, rows, main_only, kind=''):
+        return [r for r in rows if r.get('kind', '') == kind and not (main_only and r.get('file') in SUPPLEMENTARY)]
 
-    def _comps(self, author, title, old, about, main_only):
+    def _comps(self, author, title, old, about, main_only, kind=''):
         """Sold listings for this title, and whether they were matched together with the author.
         With an author read, any title counts but the listing must name one of the authors' surnames; without one, only a
         distinctive title of three or more significant words counts. An old copy that finds nothing either way may also match
@@ -410,7 +417,7 @@ class Reference:
         surs = surnames(author)
         if surs:
             srx = re.compile(r'\b(' + '|'.join(map(re.escape, surs)) + r')\b')
-            by_author = [r for r in self._pool(self.having(*surs), main_only) if any(s in fold(r['text']) for s in surs)
+            by_author = [r for r in self._pool(self.having(*surs), main_only, kind) if any(s in fold(r['text']) for s in surs)
                          and srx.search(fold(r['text'])) and self.names_fit(author, r['text'], title)]
             main = re.split(r'\s*[:;(]|\s+-\s+', title or '')[0]          # 'Bambi: A Life in the Woods' -> 'Bambi'
             for t in dict.fromkeys([title, main]):
@@ -420,23 +427,25 @@ class Reference:
         else:
             trx = title_rx(title)
             if trx and len([w for w in words(title) if w not in STOP]) >= 3 and not about:
-                hits = [r for r in self._pool(self.having(lookup_words(title)), main_only) if trx.search(r['text'])]
+                hits = [r for r in self._pool(self.having(lookup_words(title)), main_only, kind) if trx.search(r['text'])]
                 if hits and one_book(hits, title): return hits, False
-        if old and not about:
+        # a title read only in part ("…a Little Boy") could be the end of any longer title ("A Little Boy Was Painting")
+        partial = bool(re.search(r'^\W*(?:\.\.\.|…)|(?:\.\.\.|…)\W*$', title or ''))
+        if old and not about and not partial:
             whole = ' '.join(words(re.sub(r'\(.*?\)|\?|\.\.\.|…', ' ', title or '')))
             for t in title_cores(title):
                 trx = title_rx(t)
-                hits = [r for r in self._pool(self.having(lookup_words(t)), main_only) if trx and trx.search(r['text']) and not (r['year'] and r['year'] >= 1970)]
+                hits = [r for r in self._pool(self.having(lookup_words(t)), main_only, kind) if trx and trx.search(r['text']) and not (r['year'] and r['year'] >= 1970)]
                 if hits and one_book(hits, t) and (len(hits) > 1 or t == whole): return hits, False      # one sale won't value a trimmed title
         return [], bool(surs)
 
     def author_sales(self, author):
         """Every sale naming this author by their whole name, any book, any edition: from the main price files, or the
-        supplementary ones when the main ones have none."""
+        supplementary ones when the main ones have none; never the paperback and book-club sales (KINDS)."""
         rx = name_rx(author, self.single_names) if author else None
         if not rx: return []
         sales = [r for r in self.having(name_key(author)) if rx.search(r['text']) and self.names_fit(author, r['text'])]
-        return self._pool(sales, True) or sales
+        return self._pool(sales, True) or self._pool(sales, False)
 
     def signed_comps(self, author):
         return [r for r in self.author_sales(author) if r['signed'] or SIGNED_SALE.search(r['text'])]

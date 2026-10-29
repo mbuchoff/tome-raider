@@ -68,6 +68,24 @@ n\tfoot_text\tlogo\timprint\tbook_club\treprint
 FOOT_COLS = ['n', 'foot_text', 'logo', 'imprint', 'book_club', 'reprint']
 FOOT_MAX = 36               # spine feet per photo; two sheets of three rows
 
+# when a candidate copy was printed, from its whole spine: the bookshop matches sales of the same years ("versions will come
+# out many years apart. Use the color and details seen on the spine to find the year of that edition")
+DATE_PROMPT = """These are whole book spines from a bookshelf photo, numbered above each one, for a tool that values used books
+from sold listings. Editions of a book can come out many years apart and sell for very different prices, so the tool needs
+the years this copy was printed, not when the work first appeared. What was read from each spine:
+{books}
+
+For each number, estimate the years this copy was printed from what its spine shows: the colours, the cloth, paper or leather,
+the lettering and typefaces, the decoration, the publisher's name and logo and how they looked at the time, a series design,
+a price, an ISBN or barcode (1970 or later), and the wear. Use what you know of how this publisher's editions of this book
+looked over the years. Give the narrowest range you can defend: a wide range (1900-1960) is better than a wrong narrow one.
+
+Reply with TSV only: a header row, then one row per number, no prose and no code fence. Columns:
+n\tfrom\tto\tclues
+- from, to: the earliest and latest year this copy could have been printed; both "" if you can't tell.
+- clues: the details that placed it, under 15 words."""
+DATE_MAX = 40               # candidate spines per photo
+
 
 def parse(text):
     rows = []
@@ -206,6 +224,34 @@ def check_feet(claude, im, books, budget):
             b['foot'] = {k: r[k] for k in FOOT_COLS[1:]}
             read += 1
     return read
+
+
+def date_copies(claude, im, books, budget):
+    """Estimates from each given spine, whole, the years its copy was printed, and saves it on the reading as
+    book['printed'] = {from, to, clues} ({} when it can't tell). Books lying flat are left out. Returns how many were dated."""
+    todo = [b for b in books if 'printed' not in b and 'flat' not in (b.get('marks') or '').lower()][:DATE_MAX]
+    def shown(s): return '' if not (s or '').strip() or 'unreadable' in s.lower() else s.strip()
+    dated = 0
+    for sheet, idx in images.spine_sheets(im, todo, height=600, max_sheets=3, rows=2):
+        lines = []
+        for n, i in enumerate(idx, 1):
+            b = todo[i]
+            bits = [f"{shown(b.get('title')) or 'title unread'}", shown(b.get('author'))]
+            imprint = shown(b.get('imprint')) or shown((b.get('foot') or {}).get('imprint'))
+            if imprint: bits.append(f'publisher on spine: {imprint}')
+            lines.append(f'{n}. ' + '; '.join(x for x in bits if x))
+        text = claude.ask(SONNET, sheet, DATE_PROMPT.format(books='\n'.join(lines)), 3000, 3000, budget)
+        for ln in text.replace('```tsv', '').replace('```', '').strip().splitlines():
+            f = [x.strip().strip('"').strip() for x in ln.split('\t')]
+            if len(f) < 3 or f[0].lower() == 'n': continue
+            try: b = todo[idx[int(f[0]) - 1]]
+            except (ValueError, IndexError): continue
+            ys = [num(x) for x in f[1:3]]
+            if all(y is not None and 1450 <= y <= 2030 for y in ys):
+                b['printed'] = dict(zip(('from', 'to'), sorted(int(y) for y in ys)), clues=f[3] if len(f) > 3 else '')
+                dated += 1
+            else: b['printed'] = {}
+    return dated
 
 
 def read_photo(claude, im, budget, wants_second=lambda shelf: False, progress=None, note=lambda shelf: ''):

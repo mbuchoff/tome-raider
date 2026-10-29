@@ -244,7 +244,7 @@
  "book_club_possible": "book ?club",
  "reprint_publishers": "\\bcalla\\b|\\bdover\\b|ams press|facsimile|barnes (&|and) noble|canterbury classics|fall river|wordsworth|signet classics?|penguin classics|bantam classics?|reader'?s digest|everyman'?s library|\\btor classics\\b|british library",
  "collectible_imprints": "folio society|\\bfolio\\b|easton|franklin library|heritage press|limited editions club|arkham|donald m\\.? grant|gnome press|subterranean|suntup|centipede|lettered|golden cockerel|nonesuch|grabhorn|kelmscott|doves press|cuala|black sun|curwen|navarre society|essex house|vale press|eragny|ashendene|gregynog|cranach press|rampant lions|privately printed",
- "collectible_marks": "\\bsigned\\b|limited|numbered|\\bslipcase|first edition|1st edition|first printing|lettered|inscribed",
+ "collectible_marks": "\\bsigned\\b|limited|numbered|\\bslipcase|first edition|1st edition|first printing|(?<!-)(?<!\\w )\\blettered\\b|inscribed",
  "false_friend_authors": "dickens|mark twain|\\btwain\\b|walter scott|longfellow|hawthorne|kipling|zane grey|edgar rice burroughs|darwin|shakespeare|\\bbible\\b|holy bible|alger|henty|stratemeyer",
  "illustrators": "rockwell kent|rackham|gorey|lynd ward|sendak|beatrix potter|dulac|parrish|kay nielsen|howard pyle|wyeth|jessie willcox smith|pogany|harry clarke|heath robinson|charles robinson|greenaway|walter crane|denslow|john r\\.? neill|tenniel|shepard|garth williams|tasha tudor|jessie m\\.? king|hugh thomson|remington|gruelle|virginia lee burton|robert lawson|wanda g[aá]g|louis rhead|john austen|covarrubias|tom lea|frazetta|\\bdor[eé]\\b|beardsley|bewick|rex whistler|mabel lucie attwell|attwell",
  "collection_whitelist": [

@@ -14,6 +14,13 @@ PAPERBACK_HOUSES = re.compile(r'\b(signet|ace|bantam|dell|pocket books|pyramid|l
 # a sentence of the notes about signed copies: the bookshop wants one signature line, from the sales, and no other
 SIGNED_MENTION = re.compile(r"\bsigned\b|\binscribed\b|autograph|author'?s signature", re.I)
 LOT_WORDS = re.compile(r'\blot of\b|\blot\b \d|\bset of\b|facsimile|reprint|book club|\bbce\b', re.I)
+# a listing of several different books ("4 Franklin Library Leather Paine ... Prentiss Plays ..."): its price is no one book's
+MULTI_BOOK = re.compile(r'\blot of\b|\blot\b \d|^\W*(?:[2-9]|[1-4]\d)\s+(?:franklin|easton|folio|heritage)\b', re.I)
+# a copy whose spine states a later edition or printing ("6th Edition"): first-edition sales say nothing about it
+LATER_EDITION = re.compile(r'\b(?:[2-9](?:nd|rd|th)|[1-9]\d(?:st|nd|rd|th)|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|later)'
+                           r'\s+(?:edition|printing|impression)\b', re.I)
+# a story collection whose edition is the point, like a fine-press one: limited, numbered or lettered
+LIMITED_MARK = re.compile(r"\blimited\b|\bnumbered\b|(?<!-)(?<!\w )\blettered\b", re.I)      # not "red-lettered"
 # retold, abridged and children's versions of a classic: sales of the original work say nothing about them
 ADAPTATION = re.compile(r'for boys and girls|\bretold\b|\babridged\b|adapted (for|by)|junior library|classics illustrated|'
                         r'told to the children|\bsimplified\b|for young readers|children\'s edition', re.I)
@@ -116,10 +123,18 @@ def same_house(sales, house):
     return [h for h in sales if house_of_sale(h) == house]
 
 
-def era(look, year):
-    """The years a copy's own edition could carry, from a date on its spine or the look the reader gave it."""
-    if year: return year - 5, year + 5
-    return {'antique': (1450, 1930), 'old': (1915, 1975), 'modern': (1960, 2100)}.get(look, (1450, 2100))
+# an ISBN or a barcode on a spine: printed 1966 or later (the SBN came in 1966, the ISBN in 1970)
+MODERN_MARK = re.compile(r'\bI?SBN\b|\bbar ?code\b|\bUPC\b', re.I)
+
+
+def era(look, year, printed=None, modern=False):
+    """The years a copy's own edition could carry: from a date on its spine, else the years its spine's colours and details
+    say it was printed (reader.date_copies), else the look the reader gave it; never before 1966 with an ISBN or barcode."""
+    if year: lo, hi = year - 5, year + 5
+    elif printed and printed.get('from'): lo, hi = printed['from'] - 5, printed['to'] + 5
+    else: lo, hi = {'antique': (1450, 1930), 'old': (1915, 1975), 'modern': (1960, 2100)}.get(look, (1450, 2100))
+    if modern: lo = max(lo, 1966); hi = max(hi, lo)
+    return lo, hi
 
 
 def imprint_word(w):
@@ -159,11 +174,11 @@ def without_signatures(notes):
 
 def relevant_comps(hits, fmt, signed_ok, house=None):
     """Narrow sold listings to ones like this copy: the same leather publisher or none, same format, unsigned unless
-    signatures count, no lots or reprints."""
-    hits = same_house(hits, house)
-    hits = [h for h in hits if not LOT_WORDS.search(h['title'])] or hits
+    signatures count, no lots or reprints. Sales from the paperback and book-club list are of their kind whatever they say."""
+    hits = [h for h in same_house(hits, house) if not MULTI_BOOK.search(h['title'])]
+    hits = [h for h in hits if h.get('kind') or not LOT_WORDS.search(h['title'])] or hits
     if fmt == 'paperback':
-        hits = [h for h in hits if PAPERBACK_WORDS.search(h['title']) or PAPERBACK_HOUSES.search(h['title'])]
+        hits = [h for h in hits if h.get('kind') == 'paperback' or PAPERBACK_WORDS.search(h['title']) or PAPERBACK_HOUSES.search(h['title'])]
     else:
         hc = [h for h in hits if not PAPERBACK_WORDS.search(h['title'])]
         hits = hc or hits
@@ -222,9 +237,11 @@ def assess(b, category, ref, minimum):
     check_order = category in CHECK_ORDER
     sticker = STICKER.search(marks)
 
-    # paperbacks are skipped silently unless whitelisted or by an always-check author; an unclear format is treated as a hardcover
+    # paperbacks are skipped silently unless whitelisted, sold as first-edition paperbacks on the bookshop's paperback and
+    # book-club list, or by an always-check author; an unclear format is treated as a hardcover
     wl = whitelist_match(ref, author, title, imprint, look, text) if fmt == 'paperback' else []
-    if fmt == 'paperback' and not wl and not ref.always_pb.search(author + ' ' + b.get('spine_text', '')):
+    listed_pb = ref.comps(author, title, old, kind='paperback')[0] if fmt == 'paperback' else []
+    if fmt == 'paperback' and not wl and not listed_pb and not ref.always_pb.search(author + ' ' + b.get('spine_text', '')):
         out['reason'] = 'paperback not on the whitelist'
         return out
 
@@ -234,7 +251,7 @@ def assess(b, category, ref, minimum):
     coll_ok = ref.collections.whitelisted(b) if kind else None
     if kind and not coll_ok:
         imp0 = ref.rx['collectible_imprints'].search(' '.join([imprint, b.get('spine_text') or '', foot_text]))
-        if not (ref.rx['illustrators'].search(text) or imp0):
+        if not (ref.rx['illustrators'].search(text) or imp0 or LIMITED_MARK.search(marks)):
             out['reason'] = 'collection or anthology not on the whitelist'
             out['collection'] = dict(kind=kind, how=how)
             return out
@@ -247,6 +264,7 @@ def assess(b, category, ref, minimum):
         sig.append('paperback whitelist')
         out['quick'].append(f"Is it the {out['edition']}?")
         if e.get('note'): out['quick'].append(e['note'])
+    if listed_pb: sig.append('on your paperback and book-club list')
 
     # a book about a person, by someone else (Mark Schorer's Sinclair Lewis): valued only from sales of the book itself
     subject = clean(notes.get('about')) or (title if ref.is_author_name(title) else '')
@@ -256,16 +274,44 @@ def assess(b, category, ref, minimum):
     # evidence from the reference data
     adaptation = ADAPTATION.search(' '.join([title, marks, b.get('spine_text') or '']))
     hits, author_known = ref.comps(author, title, old, about=about) if not adaptation else ([], bool(author))
+    if listed_pb: hits = listed_pb + hits
     # a publisher whose sales value only its own copies must be read as text, on the spine or at its foot: the foot
     # close-up's guess from an emblem ("gold circular emblem": Easton Press) has been wrong
     house = special_house(' '.join([read_imprint, b.get('spine_text') or '', clean(foot.get('foot_text'))]))
     if not house and VISIBLY_LEATHER.search(' '.join([marks, b.get('appearance') or ''])): house = ANY_LEATHER
+    # a book-club copy is valued only from the book-club sales on the bookshop's paperback and book-club list, and left out
+    # when it has none there. Subscription publishers such as Franklin Library and Easton Press can read as clubs, but they
+    # count as collectible.
+    imp = ref.rx['collectible_imprints'].search(' '.join([imprint, b.get('spine_text') or '', foot_text]))
+    bc_text = ' '.join([imprint, marks, b.get('spine_text') or '', foot_text])
+    club = ('book-club copy (club logo at the foot of the spine)' if (foot.get('book_club') or '').lower().startswith('yes') and not imp
+            else 'book-club copy' if ref.rx['book_club_sure'].search(bc_text) and '?' not in marks else '')
+    sells = bool(hits)                  # the title's ordinary sales: a book-club copy of a title that sells is said to be left out
+    if club: hits, author_known = ref.comps(author, title, old, about=about, kind='book club')
     signed_ok = signed_shelf or bool(re.search(r'\bsigned\b', marks, re.I))
     comps, only_signed = relevant_comps(hits, fmt, signed_ok, house)
+    later = LATER_EDITION.search(' '.join([b.get('spine_text') or '', marks, foot_text]))
+    def first_of_later(h): return bool(later) and bool(FIRST_EDITION_SALE.search(h['title']))
+    if later and any(map(first_of_later, comps)):
+        comps = [h for h in comps if not first_of_later(h)]
+        sig.append(f'the spine says {later.group(0)}, so first-edition sales are left out')
 
     # other editions: a sale dated outside the copy's own years, a first edition from another publisher than the copy's, or
     # a valuable first-edition sale ($500 and up) with nothing on the copy to say it is one, values a later printing at nothing
-    lo, hi = era(look, year)
+    printed = b.get('printed') if not year else None
+    modern = MODERN_MARK.search(' '.join([b.get('spine_text') or '', marks, foot_text]))
+    lo, hi = era(look, year, printed, bool(modern))
+    # the bookshop: "versions will come out many years apart ... match to sold listings with the same year". With the copy's
+    # own years known, a title whose sales are dated is valued only from sales dated to those years: an undated "deluxe
+    # vellum" listing says nothing about a plain 1930s reprint
+    out_of_years = [h for h in comps if h.get('year') and not lo <= h['year'] <= hi]
+    own_years = bool(printed and printed.get('from')) or bool(modern)
+    undated_out = [h for h in comps if not h.get('year')] if own_years and any(h.get('year') for h in comps) else []
+    if own_years and (out_of_years or undated_out):
+        when = (f"{printed['from']}" + (f"–{printed['to']}" if printed['to'] != printed['from'] else '')) if printed and printed.get('from') else '1966 or later'
+        why = clean(printed.get('clues')) if printed and printed.get('from') else f'{modern.group(0)} on the spine'
+        n = len(out_of_years) + len(undated_out)
+        sig.append(f"looks printed {when}{f' ({why})' if why else ''}, so {n} sale{'s' if n != 1 else ''} not dated to those years left out")
     shows_first = bool(FIRST_EDITION_SALE.search(marks))
     # a Modern Library, Folio or Easton copy is valued only from its own publisher's sales: their "1st edition" is that
     # publisher's first printing, never the work's first edition from another house
@@ -274,6 +320,7 @@ def assess(b, category, ref, minimum):
     first_year = min((int(y) for y in re.findall(r'(?<!\d)(1[5-9]\d\d|20[0-2]\d)(?!\d)', notes.get('first') or '')), default=None)
     def other_edition(h):
         if h.get('year') and not lo <= h['year'] <= hi: return True
+        if undated_out and not h.get('year'): return True
         if FIRST_EDITION_SALE.search(h['title']):
             if not h.get('year') and first_year and not lo <= first_year <= hi: return True     # an undated first: the notes' year
             return pub is False or (h['price'] >= VALUABLE_FIRST and not evidence)
@@ -294,14 +341,15 @@ def assess(b, category, ref, minimum):
     if comps:
         out['value'] = median([h['price'] for h in comps])
         out['comps'] = sorted(comps, key=lambda h: -h['price'])[:4]
-        out['basis'] = 'complete sets of this title' if only_sets else 'sales of this title'
-        sig.append(f"{len(comps)} sale{'s' if len(comps) != 1 else ''} of this title" + (' by this author' if author_known else '')
+        out['basis'] = ('complete sets of this title' if only_sets else 'sales of this title') if not club else 'book-club sales of this title'
+        sig.append(f"{len(comps)} {'book-club ' if club else ''}sale{'s' if len(comps) != 1 else ''} of this title" + (' by this author' if author_known else '')
                    + (f", median {fmt_money(out['value'])}" if len(comps) > 1 else f" at {fmt_money(out['value'])}"))
     elif only_signed and hits:
         sig.append('title sells only when signed')
     signed_copy = signed_shelf or (check_order and bool(sticker))
     # a signature can't be seen on a spine: say once what signed copies fetch, when they fetch much more (the bookshop's choice)
-    signed = [h for h in same_house(hits, house) if is_signed(h) and not LOT_WORDS.search(h['title']) and not other_edition(h)]
+    signed = [h for h in same_house(hits, house) if is_signed(h) and not LOT_WORDS.search(h['title']) and not other_edition(h)
+              and not first_of_later(h)]
     if signed and not signed_copy and not signed_ok:
         ms = median([h['price'] for h in signed])
         if out['value'] is None or ms >= 1.5 * out['value']:
@@ -321,7 +369,6 @@ def assess(b, category, ref, minimum):
     if ref.always_pb.search(author) and fmt == 'paperback': sig.append('always-check paperback author')
     ill = ref.rx['illustrators'].search(text)
     if ill: sig.append(f'illustrator ({ill.group(0).title()})')
-    imp = ref.rx['collectible_imprints'].search(' '.join([imprint, b.get('spine_text') or '', foot_text]))
     if imp: sig.append(f'collectible publisher ({imp.group(0).title()})')
     mk = ref.rx['collectible_marks'].search(marks)
     if mk and look == 'modern' and FIRST_EDITION_MARK.fullmatch(mk.group(0)):
@@ -358,15 +405,13 @@ def assess(b, category, ref, minimum):
         if not check_order: lead_only = True
         any_signal = True
     if not any_signal and not signed_shelf and not lead_only:
+        if club and sells: return no(club)
         out['reason'] = 'no signal'
         return out
     if cue: sig.append(f'"{cue.group(0).lower()}" on the spine')
 
     # exclusions
-    bc_text = ' '.join([imprint, marks, b.get('spine_text') or '', foot_text])
-    # subscription publishers such as Franklin Library and Easton Press can read as clubs, but they count as collectible
-    if (foot.get('book_club') or '').lower().startswith('yes') and not imp: return no('book-club copy (club logo at the foot of the spine)')
-    if ref.rx['book_club_sure'].search(bc_text) and '?' not in marks: return no('book-club copy')
+    if club and not (comps or first_check): return no(club)
     if ref.rx['book_club_possible'].search(marks): out['quick'].append('Possibly a book-club copy')
     rp = ref.rx['reprint_publishers'].search(' '.join([imprint, b.get('spine_text') or '', foot_text]))
     if rp: return no(f'modern reprint ({rp.group(0).title()})')
@@ -408,12 +453,12 @@ def assess(b, category, ref, minimum):
         if category != 'rare': return no('modern copy by a collected author, with no sales of this title')
         ok, lead_only = True, True          # on a rare shelf, a lead to check rather than a pull
         sig.append('no sales of this title')
-    elif not old and matched and len(comps) < 2 and category in ('thrift', 'cheap') and not (imp or mk or wl):
+    elif not old and matched and len(comps) < 2 and category in ('thrift', 'cheap') and not (imp or mk or wl or listed_pb):
         return no('only one sale of this title, and this looks like a later modern copy')
     elif category == 'thrift':
-        ok = bool(wl) or (bool(matched or freq or watch) and old and hard) or (matched and author_known and old and val is not None)
+        ok = bool(wl or (listed_pb and matched)) or (bool(matched or freq or watch) and old and hard) or (matched and author_known and old and val is not None)
     elif category == 'cheap':
-        ok = bool(wl) or ((matched or freq or watch or ill or imp) and old) or bool(imp or mk) or (matched and author_known and fmt != 'paperback')
+        ok = bool(wl or (listed_pb and matched)) or ((matched or freq or watch or ill or imp) and old) or bool(imp or mk) or (matched and author_known and fmt != 'paperback')
     else:   # rare: everything plausible, ranked by value
         ok = True
     if not ok:

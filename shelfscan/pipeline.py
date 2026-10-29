@@ -77,6 +77,13 @@ def run(job_dir, claude, now=time.time, on_progress=None):
         progress(k, 'checking the feet of the candidate spines')
         if reader.check_feet(claude, im, [c['book'] for x in pulls + leads for c in [x] + x['copies']], budget):
             pulls, leads, not_pulled, skipped = rules.evaluate(books, shelf_category, ref, minimum_for)
+        # when each candidate copy was printed, from its whole spine, so it's valued from sales of its own years
+        progress(k, 'dating the candidate copies')
+        try: dated = reader.date_copies(claude, im, [c['book'] for x in pulls + leads for c in [x] + x['copies']], budget)
+        except Exception as e:                  # the dates are extra; keep the results
+            dated = 0
+            print(f'photo {k}: no dates ({type(e).__name__}: {e})', flush=True)
+        if dated: pulls, leads, not_pulled, skipped = rules.evaluate(books, shelf_category, ref, minimum_for)
         progress(k, 'writing notes on the candidates')
         try: written = notes.add_notes(claude, pulls + leads, budget)
         except Exception as e:                  # the notes are extra; keep the results

@@ -1,12 +1,15 @@
 """Checks the bookshop's rules of 28 October 2026 on the books its notes named: whole author names, books about a person,
 titles with no author, first editions and later printings, one signature reminder, partial sets, and an author the notes
-identify; and the follow-up fixes of 29 October (given and middle names on every path, signed, first-edition and set wordings). Small made-up sales; no shop data, no Claude calls.
+identify; the follow-up fixes of 29 October (given and middle names on every path, signed, first-edition and set wordings);
+and that evening's: later editions, lots, partial titles, limited collections, the paperback and book-club list, and a copy's
+printed years. Small made-up sales; no shop data, no Claude calls (a fake one for the dates).
 usage: python tests/rules_check.py"""
 import csv, os, sys, tempfile
 os.environ['SHELFSCAN_HOME'] = tempfile.mkdtemp()
 for k in ('AZURE_STORAGE_CONNECTION_STRING',): os.environ.pop(k, None)
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
-from shelfscan import refdata, rules
+from PIL import Image
+from shelfscan import reader, refdata, rules
 
 
 def check(name, got, want=True):
@@ -254,4 +257,74 @@ check('but does value the whole title', len(alone.comps('', 'The Velvet Orchard'
 a = rules.assess(book('Fahrenheit 451', 'Ray Bradbury', look='modern', notes={'first': '1953, Ballantine; also 200 signed copies in asbestos.',
                  'points': 'Price $1.50 on the jacket. A limited issue was signed by the author.', 'confidence': 'high'}), 'cheap', ref, 50)
 check('notes: sentences about signed copies left out', (a['notes']['first'], a['notes']['points']), ('1953, Ballantine;', 'Price $1.50 on the jacket.'))
+
+# the 29 October evening fixes, from tracing the marks the rules still disagreed with
+fixes = refdata.Reference(price_files=[sheet('fixes.csv', ['Title', 'Sale Price', 'Sale Date'], [
+    ["Orrin Blake / The Tin Lantern; Harbor Nights; Low Tide 1st Edition 1922", '$150.00', 'Jan 1, 2025'],
+    ['Orrin Blake, The Tin Lantern, 1930s printing', '$40.00', 'Feb 1, 2025'],
+    ['4 FRANKLIN LIBRARY LEATHER Paine RIGHTS OF MAN Hollis Prentiss Collected Plays SEA WOLF', '$90.00', 'Mar 1, 2025'],
+    ['A Little Boy Was Painting, Ada Wexford 1932 first edition', '$300.00', 'Apr 1, 2025'],
+    ['A Little Boy Was Painting by Ada Wexford, 1932', '$110.00', 'May 1, 2025']])])
+a = rules.assess(book('The Tin Lantern', 'Orrin Blake', spine_text='Orrin Blake / The Tin Lantern / 6th Edition', look='old'), 'cheap', fixes, 30)
+check('a spine that says "6th Edition": no value from a first-edition sale', [h['price'] for h in a['comps']], [40.0])
+check('and says why', any('the spine says 6th Edition' in s for s in a['signals']))
+a = rules.assess(book('Collected Plays', 'Hollis Prentiss', imprint='The Franklin Library', marks='leather'), 'cheap', fixes, 30)
+check('a lot of four Franklin Library books values none of them', (a['value'], a['comps']), (None, []))
+check('"…a Little Boy", read in part: nothing on its two words', fixes.comps('?', '…a Little Boy', old=True)[0], [])
+check('the whole title still finds its sales', len(fixes.comps('?', 'A Little Boy Was Painting', old=True)[0]), 2)
+a = rules.assess(book('The Lost Stories', 'Orrin Blake', look='modern', form='story collection', marks='limited press, numbered'), 'extreme', fixes, 0)
+check('a limited, numbered story collection is kept, like a fine-press one', a['reason'] != 'collection or anthology not on the whitelist')
+a = rules.assess(book('The Lost Stories', 'Orrin Blake', look='modern', form='story collection'), 'extreme', fixes, 0)
+check('an ordinary one is still left out', a['reason'], 'collection or anthology not on the whitelist')
+check('"red-lettered" is no lettered edition', fixes.rx['collectible_marks'].search('red-lettered black spine'), None)
+
+# the bookshop's paperback and book-club list: its sales value only paperbacks and book-club copies
+kinds = refdata.Reference(price_files=[
+    sheet('ordinary.csv', ['Title', 'Sale Price', 'Sale Date'], [['Copper Weathervanes, Orrin Blake, 1950', '$60.00', 'Jan 1, 2025']]),
+    sheet('kinds.csv', ['Image Link', 'Title', 'Book Type', 'Sold Price', 'Sale Date'], [
+        ['', 'Copper Weathervanes Orrin Blake Book Club Edition 1951', 'Book Club Edition', '$80.00', 'Feb 1, 2025'],
+        ['', 'Copper Weathervanes Orrin Blake BCE', 'Book Club Edition', '$70.00', 'Mar 1, 2025'],
+        ['', 'Copper Weathervanes, Orrin Blake, 1950', 'Book Club Edition', '$60.00', 'Jan 1, 2025'],
+        ['', 'Harbor Nights Hollis Prentiss first paperback edition', 'Paperback', '$45.00', 'Apr 1, 2025']])])
+a = rules.assess(book('Copper Weathervanes', 'Orrin Blake'), 'cheap', kinds, 30)
+check('an ordinary copy: only the ordinary sale, never book-club ones', [h['price'] for h in a['comps']], [60.0])
+check('a book-club sale that repeats an ordinary one stays in its own pool', len(kinds.comps('Orrin Blake', 'Copper Weathervanes', kind='book club')[0]), 3)
+club = dict(foot={'foot_text': '', 'logo': 'bca', 'imprint': '', 'book_club': 'yes', 'reprint': ''})
+a = rules.assess(book('Copper Weathervanes', 'Orrin Blake', **club), 'cheap', kinds, 30)
+check('a book-club copy on the list: valued from its book-club sales', (a['decision'], a['value'], a['basis']), ('pull', 70.0, 'book-club sales of this title'))
+a = rules.assess(book('The Tin Lantern', 'Orrin Blake', **club), 'cheap', fixes, 30)
+check('one not on the list is left out, as before', (a['decision'], a['reason']), ('not pulled', 'book-club copy (club logo at the foot of the spine)'))
+a = rules.assess(book('Harbor Nights', 'Hollis Prentiss', format='paperback', look='modern'), 'cheap', kinds, 30)
+check('a paperback on the list is considered and valued from it', (a['decision'], a['value']), ('pull', 45.0))
+a = rules.assess(book('Low Tide', 'Hollis Prentiss', format='paperback', look='modern'), 'cheap', kinds, 30)
+check('one on neither list is skipped', a['reason'], 'paperback not on the whitelist')
+
+# an edition's years, from its whole spine: valued from sales of those years (the bookshop: "versions will come out many years apart")
+class FakeClaude:
+    def ask(self, model, image, prompt, *a):
+        self.prompt = prompt
+        return 'n\tfrom\tto\tclues\n1\t1965\t1955\tgreen cloth, Prentice house logo\n2\t""\t""\t""\n'
+fake, im = FakeClaude(), Image.new('RGB', (300, 900), 'white')
+spines = [book('Harbor Nights', 'Hollis Prentiss', x0=10, x1=60, y0=50, y1=850), book('Low Tide', 'Hollis Prentiss', x0=100, x1=150, y0=50, y1=850)]
+check('two spines asked about, one dated', reader.date_copies(fake, im, spines, None), 1)
+check('a range read either way round, with its clues', spines[0]['printed'], {'from': 1955, 'to': 1965, 'clues': 'green cloth, Prentice house logo'})
+check("one it can't tell is marked as tried", spines[1]['printed'], {})
+check('the prompt says what was read from each spine', '1. Harbor Nights; Hollis Prentiss' in fake.prompt and '2. Low Tide' in fake.prompt)
+years = refdata.Reference(price_files=[sheet('years.csv', ['Title', 'Sale Price', 'Sale Date'], [
+    ['Harbor Nights, Hollis Prentiss, 1925 first edition', '$400.00', 'Jan 1, 2025'],
+    ['Harbor Nights, Hollis Prentiss, 1931', '$300.00', 'Feb 1, 2025'],
+    ['Harbor Nights, Hollis Prentiss, 1958 reissue', '$40.00', 'Mar 1, 2025'],
+    ['Harbor Nights, Hollis Prentiss, 1961', '$50.00', 'Apr 1, 2025']])])
+check('undated, an old-looking copy counts every sale', rules.assess(book('Harbor Nights', 'Hollis Prentiss'), 'rare', years, 30)['value'], 175.0)
+a = rules.assess(dict(spines[0]), 'rare', years, 30)
+check('printed 1955-1965: only the 1958 and 1961 sales', [h['price'] for h in a['comps']], [50.0, 40.0])
+check('and says why', any(s.startswith('looks printed 1955–1965 (green cloth, Prentice house logo), so 2 sales not dated to those years') for s in a['signals']))
+vellum = refdata.Reference(price_files=[sheet('vellum.csv', ['Title', 'Sale Price', 'Sale Date'], [
+    ['Harbor Nights, Hollis Prentiss, 1925 first edition', '$400.00', 'Jan 1, 2025'],
+    ['Harbor Nights, Hollis Prentiss, deluxe vellum edition', '$900.00', 'Feb 1, 2025']])])
+a = rules.assess(dict(spines[0]), 'rare', vellum, 30)
+check("its years known, an undated sale doesn't value it when the title's dated sales are all from other years", (a['value'], a['comps']), (None, []))
+check('an undated sale still counts for a copy whose years are unknown', rules.assess(book('Harbor Nights', 'Hollis Prentiss'), 'rare', vellum, 30)['value'], 650.0)
+a = rules.assess(book('Harbor Nights', 'Hollis Prentiss', look='unclear', spine_text='Harbor Nights / Prentiss / ISBN 0-12-345678-9'), 'rare', years, 30)
+check('an ISBN on the spine: printed 1966 or later, so none of these sales', (a['value'], any('1966 or later (ISBN on the spine)' in s for s in a['signals'])), (None, True))
 sys.exit(1 if check.failed else 0)
