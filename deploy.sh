@@ -80,7 +80,7 @@ with zipfile.ZipFile(out, 'w', zipfile.ZIP_DEFLATED) as z:
         if not os.path.exists(p): continue
         files = [p] if os.path.isfile(p) else [os.path.join(d, f) for d, _, fs in os.walk(p) if '__pycache__' not in d for f in fs]
         for f in files:
-            if not f.endswith('.xlsx'): z.write(f, os.path.relpath(f, root))      # the sales spreadsheets come from storage
+            if not f.endswith(('.xlsx', '.csv')): z.write(f, os.path.relpath(f, root))      # the sales files come from storage
     z.writestr('version.json', json.dumps(version))
 print('baseline', version.get('sha', '')[:12] if version.get('sha') else 'none', '(uncommitted changes)' if version.get('dirty') else '')
 EOF
