@@ -412,18 +412,19 @@ class Reference:
                 if hits and one_book(hits, t) and (len(hits) > 1 or t == whole): return hits, False      # one sale won't value a trimmed title
         return [], bool(surs)
 
-    def signed_comps(self, author):
+    def author_sales(self, author):
+        """Every sale naming this author by their whole name, any book, any edition."""
         rx = name_rx(author, self.single_names) if author else None
         if not rx: return []
-        return [r for r in self.having(name_key(author)) if rx.search(r['text']) and self.names_fit(author, r['text']) and (r['signed'] or SIGNED_SALE.search(r['text']))]
+        return [r for r in self.having(name_key(author)) if rx.search(r['text']) and self.names_fit(author, r['text'])]
 
+    def signed_comps(self, author):
+        return [r for r in self.author_sales(author) if r['signed'] or SIGNED_SALE.search(r['text'])]
 
     def author_comps(self, author):
         """Unsigned single-copy sales of anything by this author: a rough guide to a book whose own title has no sales."""
-        rx = name_rx(author, self.single_names) if author else None
-        if not rx: return []
-        return [r for r in self.having(name_key(author)) if rx.search(r['text']) and self.names_fit(author, r['text']) and not r['signed']
-                and not SIGNED_SALE.search(r['text']) and not re.search(r'\blot\b|\bset of\b|facsimile|reprint', r['text'])]
+        return [r for r in self.author_sales(author) if not r['signed'] and not SIGNED_SALE.search(r['text'])
+                and not re.search(r'\blot\b|\bset of\b|facsimile|reprint', r['text'])]
 
 
 def surname(author):

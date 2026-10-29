@@ -212,6 +212,19 @@ check('an ordinary copy: neither publisher\'s sales', a['value'], 100.0)
 a = rules.assess(book('Long Thaw', 'Ada Wexford', imprint='Modern Library', look='old', notes={'first': '1921, Harrap, London', 'confidence': 'high'}), 'cheap', houses, 30)
 check("a Modern Library \"1st edition\" is Modern Library's first printing, not the work's first from another publisher", a['value'], 75.0)
 
+# a book first published well after the latest year in its author's sales: no value from the author's other books
+late = refdata.Reference(price_files=[sheet('late.csv', ['Title', 'Sale Price', 'Sale Date'], [
+    ['Copper Moon by Hollis Prentiss, 1895 first edition', '$200.00', 'Jan 1, 2025'], ['Glass Tide, Hollis Prentiss, 1902', '$180.00', 'Feb 1, 2025'],
+    ['Hollis Prentiss, The Iron Orchard, 1910', '$220.00', 'Mar 1, 2025']])])
+def prentiss(first): return book('Late Harvest', 'Hollis Prentiss', notes={'first': f'{first}, Harrap, London', 'confidence': 'high'})
+check('off unless rules.json sets late_book_years', (late.rules.get('late_book_years'), rules.assess(prentiss(1933), 'extreme', late, 0)['basis']),
+      (None, "this author's other books (a rough guide)"))
+late.rules['late_book_years'] = 10
+a = rules.assess(prentiss(1933), 'extreme', late, 0)
+check('on: a book first published 23 years after the latest year in the sales gets no rough value', (a['value'], a['decision']), (None, 'skip'))
+check('and says why', any('23 years after the latest year' in x for x in a['signals']))
+check('one within the years still does', rules.assess(prentiss(1915), 'extreme', late, 0)['basis'], "this author's other books (a rough guide)")
+
 # a book about someone gets no author-wide value on extremely rare and signed shelves
 about = refdata.Reference(price_files=[sheet('about.csv', ['Title', 'Sale Price', 'Sale Date'], [
     ['Winter Novel by Mark Schorer, 1950', '$200.00', 'Jan 1, 2025'], ['Spring Stories by Mark Schorer, 1952', '$220.00', 'Feb 1, 2025'],

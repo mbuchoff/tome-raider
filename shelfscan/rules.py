@@ -303,9 +303,17 @@ def assess(b, category, ref, minimum):
         ms = median([h['price'] for h in signed])
         if out['value'] is None or ms >= 1.5 * out['value']:
             out['checks'].append(f'Check for a signature: signed copies sold for a median of {fmt_money(ms)}')
-    freq = ref.find_frequent(author)
+    # a book first published well after the latest year in its author's sales is likely not worth pulling (the bookshop,
+    # 29 October): with no sales of its own title, its author's other books and lists don't count for it. The years are
+    # late_book_years in rules.json; null leaves the rule off.
+    late_n, late = ref.rules.get('late_book_years'), None
+    if late_n is not None and not comps and first_year and author:
+        years = [h['year'] for h in ref.author_sales(author) if h.get('year')]
+        if years and first_year > max(years) + late_n: late = max(years)
+    if late: sig.append(f"first published {first_year}, {first_year - late} years after the latest year in {author}'s sales ({late})")
+    freq = ref.find_frequent(author) if not late else None
     if freq: sig.append(f'frequent author in the sales ({freq[0]})')
-    watch = ref.find_watch(author)
+    watch = ref.find_watch(author) if not late else None
     if watch: sig.append(f'watch-list author ({watch})')
     if ref.always_pb.search(author) and fmt == 'paperback': sig.append('always-check paperback author')
     ill = ref.rx['illustrators'].search(text)
@@ -328,7 +336,7 @@ def assess(b, category, ref, minimum):
         return out
 
     # on shelves read in check order, an author with several sales in the price file is enough to list the book
-    ac = same_house(ref.author_comps(author), house) if check_order and not about else []     # a book about someone: its own sales only
+    ac = same_house(ref.author_comps(author), house) if check_order and not about and not late else []     # about someone: its own sales only
     any_signal = bool(comps or freq or watch or ill or imp or mk or wl or len(ac) >= 3)
     # on rare shelves, an old book with no evidence in the price file can still be a lesser-known lead: an old book whose spine
     # shows illustrations, a translation or a small press, or on a rare shelf any antique. On shelves read in check order
