@@ -134,14 +134,38 @@ def house_of_sale(h):
     return h.get('publisher') if h.get('publisher') in HOUSES else special_house(h['title'])
 
 
-ANY_LEATHER = 'leather'      # a copy that is visibly leatherbound but names no publisher
+ANY_LEATHER = 'leather'      # an old copy that is visibly leatherbound but names no publisher
+# a modern copy that is visibly leatherbound but names no publisher: on the bookshop's shelves nearly all are Easton Press or
+# Franklin Library, whose spines seldom print their name. Their sales of its title come in many editions (standard, deluxe,
+# limited), so it is valued only from the sales whose listing photos show its own edition (edition_check, 8 November 2026).
+EASTON_OR_FRANKLIN = 'Easton Press or Franklin Library'
+EBAY_PHOTO = re.compile(r'i\.ebayimg\.com/(?:00/s/[^/]+/z|images/g)/([^/?#]+)/')
+EDITION_PHOTOS = 5          # sale photos compared with a spine
 
 
 def same_house(sales, house):
     """The sales from the copy's own publisher when it is Easton Press, Franklin Library or a specialty publisher, none of
-    theirs for an ordinary copy, and any for a copy that is visibly leatherbound but names no publisher."""
+    theirs for an ordinary copy, and any for an old copy that is visibly leatherbound but names no publisher."""
     if house == ANY_LEATHER: return list(sales)
+    if house == EASTON_OR_FRANKLIN: return [h for h in sales if house_of_sale(h) in LEATHER]
     return [h for h in sales if house_of_sale(h) == house]
+
+
+def photo_id(sale):
+    """The eBay photo id of a sale's listing photo, or None."""
+    m = EBAY_PHOTO.search(sale.get('image') or '')
+    return m.group(1) if m else None
+
+
+def edition_candidates(hits):
+    """Up to EDITION_PHOTOS sales of a title, with photos, to compare a leatherbound copy with: an Easton Press and a
+    Franklin Library sale where both sold, more of theirs, then other editions, which a match also rules in or out."""
+    hits = [h for h in hits if photo_id(h) and not several_books(h['title']) and not FACSIMILE_LIBRARY.search(h['title'])]
+    hits = list({photo_id(h): h for h in sorted(hits, key=lambda h: h['price'])}.values())       # one sale per photo
+    ef = sorted((h for h in hits if house_of_sale(h) in LEATHER), key=lambda h: -h['price'])
+    pick = [next(h for h in ef if house_of_sale(h) == x) for x in LEATHER if any(house_of_sale(h) == x for h in ef)]
+    pick += [h for h in ef if h not in pick][:3 - len(pick)]
+    return pick + sorted((h for h in hits if h not in ef), key=lambda h: -h['price'])[:EDITION_PHOTOS - len(pick)]
 
 
 # an ISBN or a barcode on a spine: printed 1966 or later (the SBN came in 1966, the ISBN in 1970)
@@ -313,9 +337,35 @@ def assess(b, category, ref, minimum):
     hits, author_known = ref.comps(author, title, old, about=about) if not adaptation else ([], bool(author))
     if listed_pb: hits = listed_pb + hits
     # a publisher whose sales value only its own copies must be read as text, on the spine or at its foot: the foot
-    # close-up's guess from an emblem ("gold circular emblem": Easton Press) has been wrong
+    # close-up's guess from an emblem ("gold circular emblem": Easton Press) has been wrong. The user can name it too, in
+    # the shelf setting or the scan's note, and so can a sign on the shelf (the pipeline's book['publisher_hint']).
     house = special_house(' '.join([read_imprint, b.get('spine_text') or '', clean(foot.get('foot_text'))]))
-    if not house and VISIBLY_LEATHER.search(' '.join([marks, b.get('appearance') or ''])): house = ANY_LEATHER
+    hint = b.get('publisher_hint') or {}
+    if not house and special_house(hint.get('publisher')):
+        house = special_house(hint['publisher'])
+        if not imprint or '?' in imprint: imprint = house           # counts as a collectible publisher, as if read
+        sig.append(f"{house}, from {hint.get('from') or 'the scan'}")
+    if not house and VISIBLY_LEATHER.search(' '.join([marks, b.get('appearance') or ''])):
+        named = re.sub(r'[?\s]', '', read_imprint + clean(foot.get('imprint')))      # some other publisher read on it
+        house = ANY_LEATHER if old or named else EASTON_OR_FRANKLIN
+    ef_title = house == EASTON_OR_FRANKLIN and any(house_of_sale(h) in LEATHER for h in hits)     # they sold this title
+    if house == EASTON_OR_FRANKLIN:
+        check = b.get('edition_check')
+        if check is None:                   # not compared yet: the pipeline compares it, then the rules run again
+            out['edition_candidates'] = edition_candidates(hits)
+            hits = []
+            out['quick'].append('Leatherbound with no publisher on the spine: check whether it is Easton Press or Franklin Library, and which edition')
+        else:
+            same = set(check.get('matched') or [])
+            hits = [h for h in hits if photo_id(h) in same]
+            n = len(check.get('compared') or [])
+            if hits:
+                houses = {house_of_sale(h) for h in hits}
+                house = houses.pop() if len(houses) == 1 and None not in houses else ANY_LEATHER
+                sig.append(f"its edition matches {len(same)} of {n} sale photo{'s' if n != 1 else ''} of this title")
+            else:
+                out['quick'].append(f"Leatherbound with no publisher on the spine, and none of {n} sale photo{'s' if n != 1 else ''} of this title shows its edition: check which it is"
+                                    if n else 'Leatherbound with no publisher on the spine, and no sale photos of this title to compare: check which edition it is')
     # a book-club copy is valued only from the book-club sales on the bookshop's paperback and book-club list, and left out
     # when it has none there. Subscription publishers such as Franklin Library and Easton Press can read as clubs, but they
     # count as collectible.
@@ -442,6 +492,10 @@ def assess(b, category, ref, minimum):
     # on shelves read in check order, an author with several sales in the price file is enough to list the book
     ac = same_house(ref.author_comps(author), house) if check_order and not about and not late else []     # about someone: its own sales only
     any_signal = bool(comps or freq or watch or ill or imp or mk or wl or len(ac) >= 3)
+    # a leatherbound copy whose edition no sale photo matched (or that wasn't compared) is listed to check: on rare shelves
+    # always, elsewhere when Easton or Franklin sold its title, so leather bibles and albums on thrift shelves stay out
+    unmatched = house == EASTON_OR_FRANKLIN and not comps and (category in RARE_SHELVES or ef_title)
+    if unmatched: any_signal = True
     # on rare shelves, an old book with no evidence in the price file can still be a lesser-known lead: an old book whose spine
     # shows illustrations, a translation or a small press, or on a rare shelf any antique. On shelves read in check order
     # (antique shops), age alone isn't enough.
@@ -472,11 +526,10 @@ def assess(b, category, ref, minimum):
     if ref.rx['book_club_possible'].search(marks): out['quick'].append('Possibly a book-club copy')
     rp = ref.rx['reprint_publishers'].search(' '.join([imprint, b.get('spine_text') or '', foot_text]))
     if rp: return no(f'modern reprint ({rp.group(0).title()})')
-    if re.search(r'leather', marks, re.I) and not old and not imp:       # modern, or an age the model couldn't call
-        return no('modern decorative leather reprint')
     if adaptation and not (ill or imp or mk):
         return no('retold or abridged edition, without an illustrator or collectible publisher')
-    if ref.rx['false_friend_authors'].search(author + ' ' + title) and not signed_copy and (lead_only or (not (matched and old) and not (look == 'antique' and hard))):
+    own_house = house not in (None, ANY_LEATHER, EASTON_OR_FRANKLIN) or ef_title     # Easton's Dickens isn't an ordinary old copy
+    if ref.rx['false_friend_authors'].search(author + ' ' + title) and not own_house and not signed_copy and (lead_only or (not (matched and old) and not (look == 'antique' and hard))):
         return no('common author whose old copies are usually ordinary')
     if re.search(r'ex-?lib|library (label|stamp|sticker|mark)', marks, re.I):
         out['quick'].append('Ex-library copy')
@@ -500,6 +553,7 @@ def assess(b, category, ref, minimum):
         elif not comps and len(ac) >= 3: estimate(ac, "this author's other books (a rough guide)", rough=True)
         ok = True
     elif first_check: ok = True                 # a possible first edition or collectable printing: a lead to check
+    elif unmatched: ok, lead_only = True, True
     elif val is not None and val < minimum and not wl:
         return no(f'matching sales median {fmt_money(val)}, under the {fmt_money(minimum)} minimum')
     elif not old and not matched and not (ill or imp or mk or wl) and category != 'extreme':
@@ -581,15 +635,18 @@ def group_copies(items):
     return out
 
 
-def evaluate(books, shelf_category, ref, minimum_for):
+def evaluate(books, shelf_category, ref, minimum_for, wants=None):
     """books: reader output. shelf_category: function shelf -> category. minimum_for: function category -> $.
     Returns (pulls, leads, not_pulled, skipped). Pulls and leads are numbered in one sequence, pulls first; several copies
-    of one title share an entry and its number."""
+    of one title share an entry and its number. wants: a list that gets (book, sales) for each leatherbound copy whose
+    edition should be compared with those sales' photos (edition_check)."""
     pulls, leads, not_pulled, skipped = [], [], [], {'paperback not on the whitelist': 0, 'unreadable': 0, 'no signal': 0}
     for b in books:
         # a book in a section the scan's note calls signed is on a signed shelf (the bookshop: "a book section or shelf")
         cat = 'signed' if b.get('from_note') == 'signed' else shelf_category(b['shelf'])
         a = assess(b, cat, ref, minimum_for(cat))
+        candidates = a.pop('edition_candidates', None)
+        if candidates and wants is not None: wants.append((b, candidates))
         item = {'book': b, 'assessment': a, 'category': cat, 'label': describe(b),
                 'links': links(clean(b.get('author')), clean(b.get('title')), clean(b.get('imprint')))}
         if a['decision'] == 'pull': pulls.append(item)

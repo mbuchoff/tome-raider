@@ -7,8 +7,8 @@ its own part of the job's budget, so the run can say what every photo cost."""
 import base64, hashlib, json, os, threading, time
 import anthropic
 
-SONNET, OPUS = 'claude-sonnet-5-5', 'claude-opus-5-5'
-PRICE = {SONNET: (2.0, 10.0), OPUS: (4.0, 20.0)}         # $ per million input / output tokens
+SONNET, OPUS, HAIKU = 'claude-sonnet-5-5', 'claude-opus-5-5', 'claude-haiku-5-5'
+PRICE = {SONNET: (2.0, 10.0), OPUS: (4.0, 20.0), HAIKU: (0.10, 0.50)}         # $ per million input / output tokens
 
 
 class CapReached(Exception):
@@ -90,9 +90,13 @@ class Claude:
         os.makedirs(cache_dir, exist_ok=True)
         self.client = anthropic.Anthropic(api_key=api_key or os.environ.get('ANTHROPIC_API_KEY'), max_retries=4)
 
-    def ask(self, model, image_jpeg, prompt, max_tokens, worst_out, budget):
-        """One image (or None) plus one prompt; returns the response text."""
-        key = hashlib.sha256(model.encode() + b'\0' + prompt.encode() + b'\0' + (image_jpeg or b'')).hexdigest()
+    def ask(self, model, image_jpeg, prompt, max_tokens, worst_out, budget, parts=(), effort=None):
+        """One image (or None) plus one prompt; returns the response text. parts: more text (str) and images (JPEG bytes),
+        in order, between the image and the prompt. effort: the model's effort setting, when not its default."""
+        h = hashlib.sha256(model.encode() + b'\0' + prompt.encode() + b'\0' + (image_jpeg or b''))
+        for p in parts: h.update(b'\0' + (p if isinstance(p, bytes) else p.encode()))
+        if effort: h.update(b'\0effort=' + effort.encode())
+        key = h.hexdigest()
         path = os.path.join(self.cache_dir, key[:2], key + '.json')
         if os.path.exists(path):
             saved = json.load(open(path))
@@ -100,9 +104,11 @@ class Claude:
             if since is None or saved.get('at', 0) >= since:        # a response saved before this change has no time: it's older
                 budget.hit()
                 return saved['text']
-        image = [{'type': 'image', 'source': {'type': 'base64', 'media_type': 'image/jpeg', 'data': base64.standard_b64encode(image_jpeg).decode()}}] if image_jpeg else []
-        messages = [{'role': 'user', 'content': image + [{'type': 'text', 'text': prompt}]}]
+        def jpeg(data): return {'type': 'image', 'source': {'type': 'base64', 'media_type': 'image/jpeg', 'data': base64.standard_b64encode(data).decode()}}
+        content = ([jpeg(image_jpeg)] if image_jpeg else []) + [jpeg(p) if isinstance(p, bytes) else {'type': 'text', 'text': p} for p in parts]
+        messages = [{'role': 'user', 'content': content + [{'type': 'text', 'text': prompt}]}]
         kw = dict(model=model, max_tokens=max_tokens, messages=messages)
+        if effort: kw['output_config'] = {'effort': effort}
         if model == SONNET: kw['thinking'] = {'type': 'between_tools'}     # transcription needs no thinking; Opus 5.5 always thinks
         n_in = self.client.messages.count_tokens(model=model, messages=messages).input_tokens       # free
         worst = cost(model, {'input_tokens': n_in, 'output_tokens': worst_out})

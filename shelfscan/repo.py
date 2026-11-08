@@ -12,7 +12,7 @@ def results_key(cid, rid): return f'captures/{cid}/runs/{rid}/results.json'
 def run_file_key(cid, rid, name): return f'captures/{cid}/runs/{rid}/files/{name}'
 INDEX_KEY = 'captures/index.json'
 ALIASES_KEY = 'captures/aliases.json'           # {merged capture id -> the capture it was merged into}
-SETTINGS = ('category', 'overrides', 'minimum', 'note', 'second_read')
+SETTINGS = ('category', 'overrides', 'publishers', 'minimum', 'note', 'second_read')
 
 
 def new_capture_id():
@@ -49,7 +49,7 @@ def find_capture(store, prints):
 
 
 def create_capture(store, photos, settings, cid=None, created=None):
-    """photos: [(original file name, bytes)]; settings: category, overrides, minimum, note, second_read, shared by every
+    """photos: [(original file name, bytes)]; settings: category, overrides, publishers, minimum, note, second_read, shared by every
     photo. Writes the photos and capture.json, and returns the capture. The settings kept on the capture are the latest
     ones, used for the next run; each run keeps the settings it ran with."""
     cid = cid or new_capture_id()

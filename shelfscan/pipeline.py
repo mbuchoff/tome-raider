@@ -3,7 +3,7 @@
 A job is a folder holding job.json (the request and its status), the uploaded photos, and after a run results.json plus images.
 run_stored() runs a stored capture this way in a temporary folder and saves the run's results and images to the store."""
 import concurrent.futures as cf, datetime, json, os, re, shutil, tempfile, threading, time, traceback
-from . import anthologies, images, notes, reader, repo, rules, scan_note
+from . import anthologies, edition_check, images, notes, reader, repo, rules, scan_note
 from .claude import Budget, CapReached, Claude
 from .refdata import Reference
 
@@ -34,6 +34,28 @@ def parse_overrides(text):
     for a, b, cat in re.findall(r'(\d+)\s*(?:-\s*(\d+))?\s*[=:]?\s*(thrift|cheap|rare|extreme|signed)', (text or '').lower()):
         for s in range(int(a), int(b or a) + 1): out[s] = cat
     return out
+
+
+def parse_publishers(text):
+    """The shelves the same field says hold one publisher's books, among those whose sales value only their own copies
+    (Easton Press, Franklin Library, the specialty publishers): '4=Easton Press, 5-6 franklin' -> {4: 'Easton Press', 5:
+    'Franklin Library', 6: 'Franklin Library'}."""
+    out = {}
+    for a, b, what in re.findall(r'(\d+)\s*(?:-\s*(\d+))?\s*[=:]?\s*([^,;\d]+)', text or ''):
+        house = rules.special_house(re.sub(r'\bfranklin\b(?!\s+(?:library|mint))', 'Franklin Library', what, flags=re.I))
+        if house:
+            for s in range(int(a), int(b or a) + 1): out[s] = house
+    return out
+
+
+def publisher_hints(p, bands, books):
+    """Sets book['publisher_hint'] for the books on a shelf the user's setting, or else a sign on the shelf, gives a publisher
+    (the rules use it when the spine names none). The scan's note can name one too (scan_note), over a sign's."""
+    setting = {int(s): h for s, h in (p.get('publishers') or {}).items()}
+    sign = {x['shelf']: x['sign'] for x in bands if rules.special_house(x.get('sign'))}
+    for b in books:
+        if setting.get(b['shelf']): b['publisher_hint'] = {'publisher': setting[b['shelf']], 'from': 'the shelf setting'}
+        elif b['shelf'] in sign: b['publisher_hint'] = {'publisher': rules.special_house(sign[b['shelf']]), 'from': f"the shelf's sign (\"{sign[b['shelf']]}\")"}
 
 
 def run(job_dir, claude, now=time.time, on_progress=None):
@@ -81,11 +103,17 @@ def run(job_dir, claude, now=time.time, on_progress=None):
     def one_photo(k, p, im, bands, books, note_applied):
         budget = parts[k - 1]
         shelf_category, minimum_for = settings(p)
-        pulls, leads, not_pulled, skipped = rules.evaluate(books, shelf_category, ref, minimum_for)
+        wants = []          # leatherbound copies with no publisher on the spine, to compare with their title's sale photos
+        pulls, leads, not_pulled, skipped = rules.evaluate(books, shelf_category, ref, minimum_for, wants)
         # the feet of the candidates' spines, up close: book-club logos and reprint imprints there are easy to miss at shelf scale
         progress(k, 'checking the feet of the candidate spines')
         if reader.check_feet(claude, im, [c['book'] for x in pulls + leads for c in [x] + x['copies']], budget):
-            pulls, leads, not_pulled, skipped = rules.evaluate(books, shelf_category, ref, minimum_for)
+            wants = []
+            pulls, leads, not_pulled, skipped = rules.evaluate(books, shelf_category, ref, minimum_for, wants)
+        # which edition each of those is, from the sale photos: it's valued only from the sales that match
+        if wants:
+            progress(k, 'comparing leather spines with sale photos')
+            if edition_check.run(claude, im, wants, budget): pulls, leads, not_pulled, skipped = rules.evaluate(books, shelf_category, ref, minimum_for)
         # when each candidate copy was printed, from its whole spine, so it's valued from sales of its own years
         progress(k, 'dating the candidate copies')
         try: dated = reader.date_copies(claude, im, [c['book'] for x in pulls + leads for c in [x] + x['copies']], budget)
@@ -118,10 +146,12 @@ def run(job_dir, claude, now=time.time, on_progress=None):
                 open(os.path.join(job_dir, c['thumb']), 'wb').write(images.jpeg(crop, 85))
         progress(k, 'done')
         shelves = sorted({b['shelf'] for b in bands})
+        signs = {x['shelf']: x['sign'] for x in bands if x.get('sign')}      # a sign on the shelf, as read
         return dict(
             name=p.get('name') or p['file'], file=p['file'], note=p.get('note', ''), category=p['category'],
             shelves=[{'shelf': s, 'category': shelf_category(s), 'minimum': minimum_for(shelf_category(s)), 'check_order': shelf_category(s) in rules.CHECK_ORDER,
-                      'books': sum(1 for b in books if b['shelf'] == s), 'unreadable': sum(1 for b in unread if b['shelf'] == s)}
+                      'books': sum(1 for b in books if b['shelf'] == s), 'unreadable': sum(1 for b in unread if b['shelf'] == s),
+                      **({'sign': signs[s]} if s in signs else {})}
                      for s in shelves],
             annotated=f'{stem}_annotated.jpg', books=len(books), unreadable=len(unread), pulls=pulls, leads=leads, not_pulled=not_pulled, skipped=skipped,
             second_read=bool(p.get('second_read')), readings=books,       # every reading, so the rules can be replayed for free
@@ -134,6 +164,8 @@ def run(job_dir, claude, now=time.time, on_progress=None):
     with cf.ThreadPoolExecutor(min(3, len(photos))) as ex:
         reads = {k: ex.submit(read_one, k, p) for k, p in photos}
     read = {k: f.result() for k, f in reads.items() if not f.exception()}
+    for k, p in photos:
+        if k in read: publisher_hints(p, read[k][1], read[k][2])
     applied = {}
     noted = [(k, p.get('name') or p['file'], p.get('note'), read[k][2]) for k, p in photos if k in read and (p.get('note') or '').strip()]
     if noted:

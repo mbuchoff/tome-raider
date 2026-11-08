@@ -183,8 +183,9 @@ def create_capture():
     if category not in CATEGORIES: abort(400)
     try: minimum = max(1.0, float(request.form['minimum'])) if request.form.get('minimum') else None
     except ValueError: minimum = None
+    publishers = {str(k): v for k, v in pipeline.parse_publishers(request.form.get('overrides')).items()}
     settings = dict(category=category, overrides={str(k): v for k, v in pipeline.parse_overrides(request.form.get('overrides')).items()},
-                    minimum=minimum, note=request.form.get('note', '')[:300], second_read=request.form.get('second_read') == '1')
+                    publishers=publishers or None, minimum=minimum, note=request.form.get('note', '')[:300], second_read=request.form.get('second_read') == '1')
     photos = [(secure_filename(f.filename), f.read()) for f in files]
     cid = repo.find_capture(store, repo.fingerprint([data for _, data in photos]))
     if cid: repo.update_settings(store, cid, settings)          # the same photos again: a new run of that capture

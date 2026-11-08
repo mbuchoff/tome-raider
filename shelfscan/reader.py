@@ -6,7 +6,8 @@ from .claude import SONNET, OPUS
 SHELF_PROMPT = """This is a photo of bookshelves. Find each shelf row of books, top to bottom.
 For each row give the band that contains the books standing on it: from slightly above the top of the tallest book to the shelf surface they stand on.
 Include a row cut off at the photo edge if its spines are visible. Give positions as percentages of the photo height.
-Reply with JSON only: {"shelves": [{"shelf": 1, "top_pct": 4.5, "bottom_pct": 33.0}, ...]}"""
+If a sign, card or label on the shelf itself (not on a book) says what the row holds, such as a publisher ("Easton Press") or a kind of book, give its words in sign; else "".
+Reply with JSON only: {"shelves": [{"shelf": 1, "top_pct": 4.5, "bottom_pct": 33.0, "sign": ""}, ...]}"""
 
 COLS = ['pos', 'x0_pct', 'x1_pct', 'y0_pct', 'y1_pct', 'spine_text', 'author', 'title', 'imprint', 'format', 'jacket', 'look', 'appearance', 'marks', 'legibility', 'confidence']
 

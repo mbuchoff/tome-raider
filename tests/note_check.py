@@ -61,7 +61,7 @@ order = []
 def fake_read(claude, im, budget, wants_second, progress=None, note=None):
     order.append(('read', im))
     return [{'shelf': 1}], [bk(f'Book {im}', 'Ada Wren')]
-def fake_evaluate(books, shelf_category, ref, minimum_for):
+def fake_evaluate(books, shelf_category, ref, minimum_for, wants=None):
     order.append(('assess', books[0]['title'], books[0].get('from_note')))
     return [], [], [], {}
 pipeline._ref = types.SimpleNamespace(version=lambda: 'test', rules={'minimum_value': {'cheap': 50}}, collections=None)

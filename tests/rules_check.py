@@ -425,4 +425,50 @@ check("a book the note calls signed is on a signed shelf: no minimum, and the au
       [(x['category'], x['assessment']['value']) for x in pulls], [('signed', 320.0)])
 a = rules.assess(book('Copper Weathervanes', 'Orrin Blake', from_note='book club'), 'cheap', kinds, 30)
 check("one the note calls a book-club copy: valued from its book-club sales", (a['decision'], a['value'], a['basis']), ('pull', 70.0, 'book-club sales of this title'))
+
+# a modern leatherbound copy that names no publisher (8 November 2026): most are Easton Press or Franklin Library, in one of
+# several editions, so it is valued only from the sales whose listing photos show its edition (edition_check)
+photo = 'https://i.ebayimg.com/images/g/{}/s-l1600.jpg'
+leather = refdata.Reference(price_files=[sheet('leather.csv', ['Title', 'Condition', 'Signed', 'Publisher', 'Sold Price', 'Sale Date', 'Image Link'], [
+    ['The Salt Road Ada Wren Easton Press Collector Edition', 'Used', 'No', 'Easton Press', '$150.00', 'Apr 1, 2026', photo.format('EAST1aaaaaaa')],
+    ['The Salt Road Ada Wren Easton Press Deluxe Limited', 'Used', 'No', 'Easton Press', '$600.00', 'May 1, 2026', photo.format('EAST2bbbbbbb')],
+    ['The Salt Road Ada Wren Franklin Library leather', 'Used', 'No', 'Franklin Library', '$90.00', 'Jun 1, 2026',
+     'https://i.ebayimg.com/00/s/MTAwWDEwMA==/z/FRAN1ccccccc/$_57.JPG?set_id=1'],
+    ['The Salt Road by Ada Wren, Odhams Press, 1950', '', '', '', '$70.00', 'Jul 1, 2025', photo.format('ODHA1ddddddd')],
+    ['Bleak House Charles Dickens Easton Press', 'Used', 'No', 'Easton Press', '$200.00', 'Mar 1, 2026', photo.format('EAST3eeeeeee')],
+])])
+salt = dict(look='modern', marks='leather, gilt', spine_text='The Salt Road / Ada Wren')
+wants = []
+pulls, leads, not_pulled, skipped = rules.evaluate([book('The Salt Road', 'Ada Wren', **salt)], lambda s: 'rare', leather, lambda c: 100, wants)
+check('not dropped as a decorative reprint: listed to check, with no value until its edition is known',
+      [(x['assessment']['decision'], x['assessment']['value']) for x in pulls + leads + not_pulled], [('lead', None)])
+check("its title's sale photos are offered for comparing: one Easton and one Franklin, more of theirs, then another edition",
+      [rules.photo_id(h) for h in wants[0][1]] if wants else None, ['EAST2bbbbbbb', 'FRAN1ccccccc', 'EAST1aaaaaaa', 'ODHA1ddddddd'])
+check('and says to check it', any('check whether it is Easton Press or Franklin Library' in q for q in (leads + not_pulled + pulls)[0]['assessment']['quick']))
+checked = dict(compared=[{'id': i} for i in ('EAST2bbbbbbb', 'FRAN1ccccccc', 'EAST1aaaaaaa', 'ODHA1ddddddd')], matched=['EAST1aaaaaaa'])
+a = rules.assess(book('The Salt Road', 'Ada Wren', edition_check=checked, **salt), 'rare', leather, 100)
+check('its photo matches the Easton collector edition: valued from that sale alone, not the deluxe one or Franklin',
+      (a['decision'], a['value'], [h['price'] for h in a['comps']]), ('pull', 150.0, [150.0]))
+check('and says so', any('its edition matches 1 of 4 sale photos' in s for s in a['signals']))
+a = rules.assess(book('The Salt Road', 'Ada Wren', edition_check=dict(checked, matched=[]), **salt), 'rare', leather, 100)
+check('no photo matches: no value, and a line to check the edition', (a['value'], any('none of 4 sale photos' in q for q in a['quick'])), (None, True))
+wants = []
+pulls, *_ = rules.evaluate([book('The Salt Road', 'Ada Wren', edition_check=checked, **salt)], lambda s: 'rare', leather, lambda c: 100, wants)
+check('a copy already compared is not offered again', wants, [])
+hint = {'publisher': 'Easton Press', 'from': 'the shelf setting'}
+wants = []
+pulls, *_ = rules.evaluate([book('The Salt Road', 'Ada Wren', publisher_hint=hint, **salt)], lambda s: 'rare', leather, lambda c: 100, wants)
+check('on a shelf the user calls Easton Press: valued from Easton sales, with no photo comparison',
+      ([x['assessment']['value'] for x in pulls], wants), ([375.0], []))
+check('and says where the publisher came from', any(s == 'Easton Press, from the shelf setting' for s in pulls[0]['assessment']['signals']))
+a = rules.assess(book('Bleak House', 'Charles Dickens', publisher_hint=hint, **dict(salt, spine_text='Bleak House / Charles Dickens')), 'rare', leather, 100)
+check("an Easton Dickens is not dropped as a common author's ordinary copy", (a['decision'], a['value']), ('pull', 200.0))
+a = rules.assess(book('The Salt Road', 'Ada Wren', edition_check=dict(checked, matched=[]), **salt), 'thrift', leather, 50)
+check('on a thrift shelf too, when Easton or Franklin sold its title', a['decision'], 'lead')
+a = rules.assess(book('Family Album', look='modern', marks='leather', spine_text='Family Album'), 'thrift', leather, 50)
+check('but not a leather album no one sold in those editions', a['decision'] in ('lead', 'pull'), False)
+for name, kw in (('an old leatherbound copy', dict(salt, look='old')), ('one whose spine names another publisher', dict(salt, imprint='Odhams Press'))):
+    wants = []
+    rules.evaluate([book('The Salt Road', 'Ada Wren', **kw)], lambda s: 'rare', leather, lambda c: 100, wants)
+    check(f'{name} is not compared with sale photos', wants, [])
 sys.exit(1 if check.failed else 0)

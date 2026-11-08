@@ -5,7 +5,7 @@
 {% macro photo_costs(r, ph, n) %}{% if r.cost.photos or n %}<details class="info"><summary aria-label="Cost of each photo"><span>ⓘ</span></summary><div class="pop">
   {%- if r.cost.photos %}<div class="muted">Cost of each photo</div><table>{% for c in r.cost.photos %}<tr><td>Photo {{ loop.index }}</td><td class="muted">{{ ph[loop.index0].name if ph[loop.index0] is defined and ph[loop.index0].name }}</td><td>${{ '%.2f' % c.spent }}</td></tr>{% endfor %}</table>
   {%- else %}About ${{ '%.2f' % (r.cost.spent / n) }} a photo: this run kept only its total{% endif %}</div></details>{% endif %}{% endmacro %}
-{% macro settings_text(p0) %}{% if p0 %}{{ categories[p0.category] }}{% for s, c in (p0.overrides or {}).items() %}, shelf {{ s }} {{ categories[c] }}{% endfor %}{% if p0.minimum %}, minimum ${{ p0.minimum }}{% endif %}{{ ', second read' if p0.second_read }}{% if p0.note %}; note: {{ p0.note }}{% endif %}{% endif %}{% endmacro %}
+{% macro settings_text(p0) %}{% if p0 %}{{ categories[p0.category] }}{% for s, c in (p0.overrides or {}).items() %}, shelf {{ s }} {{ categories[c] }}{% endfor %}{% for s, h in (p0.publishers or {}).items() %}, shelf {{ s }} {{ h }}{% endfor %}{% if p0.minimum %}, minimum ${{ p0.minimum }}{% endif %}{{ ', second read' if p0.second_read }}{% if p0.note %}; note: {{ p0.note }}{% endif %}{% endif %}{% endmacro %}
 <h2>Runs</h2>
 <div class="scroll"><table class="runs">
   <tr><th>When (UTC)</th><th>Settings</th><th>Baseline (UTC)</th><th>Status</th><th>Cost</th><th>Pulls</th></tr>
