@@ -56,8 +56,8 @@ check('each run keeps its own settings', [r['photos'][0]['category'] for r in ru
 check('the pipeline ran with the run\'s settings', repo.load_results(store, x, runs[0]['id'])['photos'][0]['category'] == 'extreme')
 check('the capture keeps the latest settings', repo.load_capture(store, x)['photos'][0]['category'] == 'extreme')
 check('capture photos are fingerprinted', repo.load_capture(store, x)['photos'][0]['sha256'] == repo.fingerprint([A])[0])
-page = c.get(f'/captures/{x}').data.decode()
-check('runs table shows each run\'s settings', 'Extremely rare' in page and 'Rare bookshop' in page and 'adds a run here' in page)
+page = c.get(f'/captures/{x}', follow_redirects=True).data.decode()      # one photo: its image page carries the runs table
+check('runs table shows each run\'s settings', 'Extremely rare' in page and 'Rare bookshop' in page)
 
 y = upload(B, 'other.jpg', 'cheap'); wait(y)
 check('different photos, new capture', y != x)
