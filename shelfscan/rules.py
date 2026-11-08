@@ -157,6 +157,35 @@ def photo_id(sale):
     return m.group(1) if m else None
 
 
+def first_candidates(hits, club):
+    """Up to EDITION_PHOTOS sales to compare a copy valued from first editions with, as (kind, sale): three first editions
+    spread over their prices, then a book-club sale, a facsimile (First Edition Library) and a later edition, where they sold."""
+    hits = [h for h in hits if photo_id(h) and not several_books(h['title'])]
+    fel = [h for h in hits if FACSIMILE_LIBRARY.search(h['title'])]
+    firsts = sorted((h for h in hits if FIRST_EDITION_SALE.search(h['title']) and h not in fel), key=lambda h: h['price'])
+    if len(firsts) > 3: firsts = [firsts[round(i * (len(firsts) - 1) / 2)] for i in range(3)]
+    pick = [('first', h) for h in firsts]
+    later = [h for h in hits if h not in fel and not FIRST_EDITION_SALE.search(h['title'])]
+    for kind, xs in (('book club', [h for h in club if photo_id(h)]), ('facsimile', fel), ('later', later)):
+        if xs and len(pick) < EDITION_PHOTOS: pick.append((kind, max(xs, key=lambda h: h['price'])))
+    return list({photo_id(h): (k, h) for k, h in pick}.values())
+
+
+def first_photo_line(compared):
+    """A line for the card from Haiku's answers on a copy valued from first editions (edition_check.compare_first), or ''."""
+    firsts = [c for c in compared if c.get('kind') == 'first']
+    if any(c['same'] == 'yes' for c in firsts):
+        return "The spine looks like a first edition's in the sale photos: check the printing"
+    other = next((c for c in compared if c.get('kind') in ('book club', 'facsimile') and c['same'] == 'yes'), None)
+    if other:
+        what = 'a book-club copy' if other['kind'] == 'book club' else 'a facsimile (such as the First Edition Library\'s)'
+        return f"The spine looks like {what} in a sale photo" + (f": {other['why'].rstrip('.')}" if other.get('why') else '')
+    if firsts and all(c['same'] == 'no' for c in firsts):
+        why = next((c['why'] for c in firsts if c.get('why')), '')
+        return "The spine doesn't look like the first editions in the sale photos" + (f": {why.rstrip('.')}" if why else '')
+    return ''
+
+
 def edition_candidates(hits):
     """Up to EDITION_PHOTOS sales of a title, with photos, to compare a leatherbound copy with: an Easton Press and a
     Franklin Library sale where both sold, more of theirs, then other editions, which a match also rules in or out."""
@@ -363,6 +392,7 @@ def assess(b, category, ref, minimum):
     adaptation = ADAPTATION.search(' '.join([title, marks, b.get('spine_text') or '']))
     hits, author_known = ref.comps(author, title, old, about=about, imprint=imprint, alone=from_catalog) if not adaptation else ([], bool(author))
     if listed_pb: hits = listed_pb + hits
+    title_hits = hits                   # before a book-club copy's or a leather edition's narrowing
     # a publisher whose sales value only its own copies must be read as text, on the spine or at its foot: the foot
     # close-up's guess from an emblem ("gold circular emblem": Easton Press) has been wrong. The user can name it too, in
     # the shelf setting or the scan's note, and so can a sign on the shelf (the pipeline's book['publisher_hint']).
@@ -539,6 +569,17 @@ def assess(b, category, ref, minimum):
                              + (f" (first edition: {notes['first']})" if clean(notes.get('first')) else ''))
         if not check_order: lead_only = True
         any_signal = True
+    # an ordinary copy valued from first-edition sales, or listed to check whether it is one: its spine is compared with the
+    # sale photos (edition_check.compare_first) for a line on the card when it looks like another edition, or like the first.
+    # The value doesn't change: in a test on the bookshop's marks it caught reprints and other books, but not book-club
+    # copies or facsimiles in the first's jacket (8 November 2026).
+    if house is None and not club and any(FIRST_EDITION_SALE.search(h['title']) for h in comps + (elsewhere if first_check else [])):
+        out['on_firsts'] = True
+        if b.get('first_photos') is None:
+            club_sales = ref.comps(author, title, old, about=about, kind='book club', imprint=imprint, alone=from_catalog)[0]
+            out['first_candidates'] = first_candidates(title_hits, club_sales)
+        elif first_photo_line(b['first_photos'].get('compared') or []):
+            out['quick'].append(first_photo_line(b['first_photos']['compared']))
     if not any_signal and not signed_shelf and not lead_only:
         if club and sells: return no(club)
         out['reason'] = 'no signal'
@@ -662,11 +703,12 @@ def group_copies(items):
     return out
 
 
-def evaluate(books, shelf_category, ref, minimum_for, wants=None):
+def evaluate(books, shelf_category, ref, minimum_for, wants=None, firsts=None):
     """books: reader output. shelf_category: function shelf -> category. minimum_for: function category -> $.
     Returns (pulls, leads, not_pulled, skipped). Pulls and leads are numbered in one sequence, pulls first; several copies
     of one title share an entry and its number. wants: a list that gets (book, sales) for each leatherbound copy whose
-    edition should be compared with those sales' photos (edition_check)."""
+    edition should be compared with those sales' photos (edition_check). firsts: one that gets (book, [(kind, sale)]) for
+    each pull or lead valued from first-edition sales, to compare the same way (edition_check.compare_first)."""
     pulls, leads, not_pulled, skipped = [], [], [], {'paperback not on the whitelist': 0, 'unreadable': 0, 'no signal': 0}
     for b in books:
         # a book in a section the scan's note calls signed is on a signed shelf (the bookshop: "a book section or shelf")
@@ -674,6 +716,8 @@ def evaluate(books, shelf_category, ref, minimum_for, wants=None):
         a = assess(b, cat, ref, minimum_for(cat))
         candidates = a.pop('edition_candidates', None)
         if candidates and wants is not None: wants.append((b, candidates))
+        candidates = a.pop('first_candidates', None)
+        if candidates and firsts is not None and a['decision'] in ('pull', 'lead'): firsts.append((b, candidates))
         item = {'book': b, 'assessment': a, 'category': cat, 'label': describe(b),
                 'links': links(clean(b.get('author')), clean(b.get('title')), clean(b.get('imprint')))}
         if a['decision'] == 'pull': pulls.append(item)

@@ -36,7 +36,7 @@ check('a sign naming no such publisher gives none', 'publisher_hint' in books[2]
 class Fake:
     def __init__(self, reply): self.reply, self.calls = reply, []
     def ask(self, model, image, prompt, max_tokens, worst_out, budget, parts=(), effort=None):
-        self.calls.append(dict(model=model, parts=parts, effort=effort))
+        self.calls.append(dict(model=model, parts=parts, effort=effort, prompt=prompt))
         return json.dumps(self.reply)
 
 # the note names a publisher's section; it doesn't overrule the shelf setting
@@ -72,4 +72,15 @@ class Broken(Fake):
     def ask(self, *a, **kw): raise RuntimeError('API down')
 b = book(1, 'The Salt Road')
 check('a failed call leaves the copy uncompared, to be listed to check', (edition_check.run(Broken({}), im, [(b, sales)], None, fetch=fetch), 'edition_check' in b), (0, False))
+
+# a copy valued from first editions: the jacket prompt, and each answer keeps its sale's kind
+fake = Fake({'A': {'same': 'no', 'why': 'UK jacket'}, 'B': {'same': 'yes', 'why': 'same jacket'}})
+b = book(1, 'The Salt Road')
+edition_check.compare_first(fake, im, b, [('first', sales[0]), ('first', sales[1]), ('book club', sales[2])], None, fetch=fetch)
+check('the jacket prompt is used', 'dust-jacket design' in fake.calls[0].get('prompt', ''), True)
+check("each answer keeps its sale's kind; a photo that couldn't be had is left out",
+      [(c['id'], c['kind'], c['same']) for c in b['first_photos']['compared']], [('AAAA1111', 'first', 'no'), ('CCCC3333', 'book club', 'yes')])
+b = book(1, 'The Salt Road')
+check('run compares with the function it is given', (edition_check.run(fake, im, [(b, [('first', sales[0])])], None, fetch=fetch, how=edition_check.compare_first),
+                                                     'first_photos' in b, 'edition_check' in b), (1, True, False))
 sys.exit(1 if check.failed else 0)

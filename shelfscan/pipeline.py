@@ -135,6 +135,14 @@ def run(job_dir, claude, now=time.time, on_progress=None):
         # what the notes found (the author, who a book is about, the copy's publisher, a collection) can change a decision
         if written or any(ref.collections.kind(x['book'])[0] for x in pulls + leads):
             pulls, leads, not_pulled, skipped = rules.evaluate(books, shelf_category, ref, minimum_for)
+        # pulls and leads valued from first-edition sales: their spines against those sales' photos, for a line on the card
+        # when one looks like another edition (or like the first); the values stay as they are
+        if any(c['assessment'].get('on_firsts') and 'first_photos' not in c['book'] for x in pulls + leads for c in [x] + x['copies']):
+            firsts = []
+            pulls, leads, not_pulled, skipped = rules.evaluate(books, shelf_category, ref, minimum_for, firsts=firsts)
+            progress(k, 'comparing spines with first-edition photos')
+            if firsts and edition_check.run(claude, im, firsts, budget, how=edition_check.compare_first):
+                pulls, leads, not_pulled, skipped = rules.evaluate(books, shelf_category, ref, minimum_for)
         stem = f'photo{k}'
         # spines nothing could be read from get a '?' box, drawn first so the numbered boxes sit on top
         unread = [b for b in books if rules.unreadable(b)]

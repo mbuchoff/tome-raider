@@ -10,7 +10,13 @@ assigns to a publisher isn't compared (rules.assess uses that publisher).
 
 The listing photos are read from the store's archive (ARCHIVE), since eBay drops them a few months after a sale, else from
 eBay. Each copy gets book['edition_check'] = {compared: [{id, house, price, same, why}], matched: [photo ids]}, kept with the
-reading so the rules can be replayed for free."""
+reading so the rules can be replayed for free.
+
+compare_first does the same for an ordinary copy valued from first-edition sales, with three first-edition photos and a
+book-club, facsimile or later edition's (rules.first_candidates), and a prompt about dust jackets: book['first_photos'] =
+{compared: [... kind]}. Its answers only add a line to the card (rules.first_photo_line). On 253 such books on the
+bookshop's shelves (0.09 cents each) it caught reprint series and other books valued from first editions, but not
+book-club copies or facsimiles in the first's jacket, and it didn't bring the results closer to the bookshop's marks."""
 import concurrent.futures as cf, json, re, urllib.request
 from . import images
 from .claude import HAIKU
@@ -26,6 +32,20 @@ For each sold listing, say whether the book on the shelf is the same edition as 
 and the same binding design (leather or cloth colour, gilt patterns, lettering, emblems). Different volumes of one uniform
 set count as the same edition. Judge by the photos; the listing titles only tell you what the sellers called them. Say
 "unsure" when the photos don't show enough to tell.
+
+Reply with JSON only: {"A": {"same": "yes|no|unsure", "why": "under 20 words"}, "B": ...}"""
+FIRST_PROMPT = """You check books for a bookshop. The first image is one book's spine, cropped from a photo of a shelf; it may be in a
+dust jacket. The other images are photos from sold listings of the same title: they may show the jacket's front, the spine,
+the whole book, or a title or copyright page.
+
+For each sold listing, say whether the book on the shelf is the same edition as the book in that photo: the same publisher,
+and the same dust-jacket design (or, without a jacket, the same binding: cloth colour, lettering, decoration). Printings of
+one edition share its jacket, so they count as the same. A book-club edition, a reissue with a different jacket or binding,
+a facsimile (such as the First Edition Library's, in a slipcase) or another publisher's edition does not. Judge by the
+photos; the listing titles only tell you what the sellers called them. Compare a jacket with a jacket and a binding with a
+binding: when the shelf copy has no jacket and a listing shows only its jacket (or the other way round), their colours say
+nothing, so say "unsure" unless something else (the publisher, the lettering on the binding) settles it. Say "unsure" too
+when the photos don't show enough to tell, for example a title page only.
 
 Reply with JSON only: {"A": {"same": "yes|no|unsure", "why": "under 20 words"}, "B": ...}"""
 _store = None
@@ -55,15 +75,15 @@ def spine(im, b):
     return images.jpeg(crop, 90)
 
 
-def compare(claude, im, b, sales, budget, fetch=sale_photo):
-    """Sets b['edition_check'] from one Haiku call comparing the spine with the sales' photos (those that can be had)."""
+def ask(claude, im, b, sales, budget, fetch=sale_photo, prompt=PROMPT):
+    """One Haiku call comparing the spine with the sales' photos (those that can be had): [{id, house, price, same, why}]."""
     have = [(h, photo) for h in sales for photo in [fetch(h)] if photo]
     compared = [dict(id=photo_id(h), house=house_of_sale(h) or '', price=h['price']) for h, _ in have]
     if have:
         parts = ['Shelf spine:', spine(im, b)]
         for letter, (h, photo) in zip('ABCDE', have):
             parts += [f'Sold listing {letter}: "{h["title"]}"', photo]
-        text = claude.ask(HAIKU, None, PROMPT, 8000, 4000, budget, parts=parts, effort='high')
+        text = claude.ask(HAIKU, None, prompt, 8000, 4000, budget, parts=parts, effort='high')
         m = re.search(r'\{.*\}', text, re.S)
         try: reply = json.loads(m.group(0)) if m else {}
         except ValueError: reply = {}
@@ -71,14 +91,29 @@ def compare(claude, im, b, sales, budget, fetch=sale_photo):
             a = reply.get(letter) if isinstance(reply.get(letter), dict) else {}
             c['same'] = str(a.get('same') or 'unsure').lower()
             c['why'] = str(a.get('why') or '').strip()
+    return compared
+
+
+def compare(claude, im, b, sales, budget, fetch=sale_photo):
+    """Sets b['edition_check'] for a leatherbound copy: which of its title's sales show its edition."""
+    compared = ask(claude, im, b, sales, budget, fetch)
     b['edition_check'] = dict(model=HAIKU, compared=compared, matched=[c['id'] for c in compared if c.get('same') == 'yes'])
 
 
-def run(claude, im, wants, budget, fetch=sale_photo):
-    """wants: [(book, sales)] from rules.evaluate. Compares each copy, four at a time; returns how many were compared.
-    A copy whose call fails is left uncompared, and listed to check."""
+def compare_first(claude, im, b, picks, budget, fetch=sale_photo):
+    """Sets b['first_photos'] for a copy valued from first editions. picks: [(kind, sale)] from rules.first_candidates."""
+    compared = ask(claude, im, b, [h for _, h in picks], budget, fetch, FIRST_PROMPT)
+    kinds = {photo_id(h): k for k, h in picks}
+    for c in compared: c['kind'] = kinds.get(c['id'], '')
+    b['first_photos'] = dict(model=HAIKU, compared=compared)
+
+
+def run(claude, im, wants, budget, fetch=sale_photo, how=compare):
+    """wants: [(book, sales)] from rules.evaluate, compared by how (compare, or compare_first for evaluate's firsts), four
+    at a time; returns how many were compared. A copy whose call fails is left uncompared (a leatherbound one is listed to
+    check)."""
     def one(bs):
-        try: compare(claude, im, bs[0], bs[1], budget, fetch); return 1
+        try: how(claude, im, bs[0], bs[1], budget, fetch); return 1
         except Exception as e:
             print(f"edition check failed for {bs[0].get('title')!r} ({type(e).__name__}: {e})", flush=True)
             return 0

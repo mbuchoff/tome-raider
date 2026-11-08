@@ -471,4 +471,39 @@ for name, kw in (('an old leatherbound copy', dict(salt, look='old')), ('one who
     wants = []
     rules.evaluate([book('The Salt Road', 'Ada Wren', **kw)], lambda s: 'rare', leather, lambda c: 100, wants)
     check(f'{name} is not compared with sale photos', wants, [])
+
+# an ordinary copy valued from first-edition sales: its spine is compared with their photos, for a line on the card; the
+# value doesn't change (8 November 2026)
+firsts = refdata.Reference(price_files=[sheet('firsts.csv', ['Title', 'Sale Price', 'Sale Date', 'Image Link'], [
+    ['The Iron Gate, Orrin Blake, first edition 1952, Scribner', '$400.00', 'Apr 1, 2025', photo.format('FIRS1aaaaaaa')],
+    ['Orrin Blake The Iron Gate 1st edition, 1st printing', '$300.00', 'May 1, 2025', photo.format('FIRS2bbbbbbb')],
+    ['The Iron Gate by Orrin Blake, first edition', '$250.00', 'Jun 1, 2025', photo.format('FIRS3ccccccc')],
+    ['The Iron Gate by Orrin Blake, first edition, near fine', '$200.00', 'Jul 1, 2025', photo.format('FIRS4ddddddd')],
+    ['The Iron Gate Orrin Blake First Edition Library facsimile, slipcase', '$60.00', 'Aug 1, 2025', photo.format('FELX1eeeeeee')],
+    ['The Iron Gate, Orrin Blake, 1970 reprint', '$20.00', 'Sep 1, 2025', photo.format('LATE1fffffff')],
+])])
+gate = dict(look='old', spine_text='The Iron Gate / Orrin Blake / Scribner', imprint='Scribner')
+want_firsts = []
+pulls, *_ = rules.evaluate([book('The Iron Gate', 'Orrin Blake', marks='first edition', **gate)], lambda s: 'rare', firsts, lambda c: 100, firsts=want_firsts)
+check('a copy valued from first-edition sales is offered for comparing', [(k, rules.photo_id(h)) for k, h in want_firsts[0][1]] if want_firsts else None,
+      [('first', 'FIRS4ddddddd'), ('first', 'FIRS2bbbbbbb'), ('first', 'FIRS1aaaaaaa'), ('facsimile', 'FELX1eeeeeee'), ('later', 'LATE1fffffff')])
+value = pulls[0]['assessment']['value']
+def answers(*same): return {'compared': [dict(id=i, kind=k, same=a, why='green cloth, not the red jacket' if a == 'no' else 'same jacket')
+                                         for (i, k), a in zip([('FIRS4ddddddd', 'first'), ('FIRS2bbbbbbb', 'first'), ('FIRS1aaaaaaa', 'first'),
+                                                               ('FELX1eeeeeee', 'facsimile'), ('LATE1fffffff', 'later')], same)]}
+for same, line in ((('no', 'no', 'no', 'no', 'yes'), "The spine doesn't look like the first editions in the sale photos: green cloth, not the red jacket"),
+                   (('no', 'no', 'no', 'yes', 'no'), "The spine looks like a facsimile (such as the First Edition Library's) in a sale photo: same jacket"),
+                   (('unsure', 'yes', 'no', 'no', 'no'), "The spine looks like a first edition's in the sale photos: check the printing"),
+                   (('no', 'no', 'unsure', 'no', 'no'), None)):
+    a = rules.assess(book('The Iron Gate', 'Orrin Blake', marks='first edition', first_photos=answers(*same), **gate), 'rare', firsts, 100)
+    lines = [q for q in a['quick'] if q.startswith('The spine')]
+    check(f"photo answers {same}: {line or 'no line'}, and the same value", (lines, a['value']), ([line] if line else [], value))
+want_firsts = []
+rules.evaluate([book('The Iron Gate', 'Orrin Blake', marks='first edition', first_photos=answers('no', 'no', 'no', 'no', 'no'), **gate)],
+               lambda s: 'rare', firsts, lambda c: 100, firsts=want_firsts)
+check('a copy already compared is not offered again', want_firsts, [])
+want_firsts = []
+rules.evaluate([book('The Iron Gate', 'Orrin Blake', look='modern', spine_text='The Iron Gate / Orrin Blake', marks='')], lambda s: 'thrift', firsts, lambda c: 100,
+               firsts=want_firsts)
+check('a copy that is not listed is not compared', want_firsts, [])
 sys.exit(1 if check.failed else 0)
