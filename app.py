@@ -17,7 +17,7 @@ Settings (environment variables):
 import datetime, hmac, mimetypes, os, queue, secrets, shutil, threading, time
 from flask import Flask, Response, abort, redirect, render_template, request, session, url_for
 from werkzeug.utils import secure_filename
-from shelfscan import anthologies_web, credit, marks, marks_web, pipeline, repo, version
+from shelfscan import anthologies_web, credit, images, marks, marks_web, pipeline, repo, version
 from shelfscan import index as capture_index
 from shelfscan.claude import Claude
 from shelfscan.rules import CATEGORIES
@@ -25,6 +25,8 @@ from shelfscan.store import NotFound, open_store
 
 HOME = os.environ.get('SHELFSCAN_HOME') or os.path.join(os.path.dirname(os.path.abspath(__file__)), 'var')
 JOBS, CACHE, WORK = os.path.join(HOME, 'jobs'), os.path.join(HOME, 'cache'), os.path.join(HOME, 'work')
+THUMBS = os.path.join(HOME, 'thumbs')          # small copies of the photos, made when first asked for: they can be made again
+THUMB_SIZES = {'sm': 240, 'md': 720}           # the longer side in px: the scan page's list, the capture's gallery
 PHOTO_CAP = float(os.environ.get('SHELFSCAN_PHOTO_CAP', '2.00'))
 DAILY_CAP = float(os.environ.get('SHELFSCAN_DAILY_CAP', '10.00'))
 ADMIN_KEY = os.environ.get('ANTHROPIC_ADMIN_KEY', '').strip()
@@ -70,7 +72,7 @@ app.register_blueprint(anthologies_web.bp)
 def recent_captures(n=25):
     """The newest captures' summaries, from the index (rebuilt from the store if it's missing or out of date)."""
     entries = capture_index.read(store).get('captures') or []
-    if (not entries or any('runs' not in e for e in entries)) and repo.capture_ids(store):      # or from before run counts
+    if (not entries or any('runs' not in e or 'images' not in e for e in entries)) and repo.capture_ids(store):      # or from before run counts or thumbnails
         capture_index.rebuild(store)
         entries = capture_index.read(store).get('captures') or []
     return entries[:n]
@@ -191,23 +193,56 @@ def create_capture():
     return redirect(url_for('capture_page', cid=cid))         # the page shows the newest run
 
 
-@app.route('/captures/<cid>')
-def capture_page(cid):
-    to = repo.valid_id(cid) and not store.exists(repo.capture_key(cid)) and repo.resolve_alias(store, cid)
-    if to: return redirect(url_for('capture_page', cid=to, **request.args), 301)       # merged into another capture
-    capture = capture_or_404(cid)
+def merged_into(cid):
+    """The capture a merged capture's id now points to, or None."""
+    return repo.valid_id(cid) and not store.exists(repo.capture_key(cid)) and repo.resolve_alias(store, cid)
+
+
+def chosen_run(cid):
+    """(runs, run, results): the capture's runs, newest first, the one ?run= names (else the newest), and its results once
+    it has finished (else None). An unknown ?run= is not found."""
     runs = repo.list_runs(store, cid)
     rid = request.args.get('run')
     run = next((r for r in runs if r['id'] == rid), None) if rid else (runs[0] if runs else None)
     if rid and not run: abort(404)
     results = repo.load_results(store, cid, run['id']) if run and run['status'] not in ('queued', 'running') else None
-    busy = any(r['status'] in ('queued', 'running') for r in runs)
-    return render_template('capture.html', capture=capture, runs=runs, run=run, results=results, busy=busy,
-                           baseline=version.baseline(), new_run_url=url_for('new_run', cid=cid),
-                           file_url=lambda n: url_for('run_file', cid=cid, rid=run['id'], name=n),
-                           results_url=run and url_for('run_results', cid=cid, rid=run['id']),
-                           marks=marks.for_run(store, cid, results) if results else {}, marks_url=f'/captures/{cid}/marks',
-                           credit=credit.remaining(HOME, ADMIN_KEY))
+    return runs, run, results
+
+
+@app.route('/captures/<cid>')
+def capture_page(cid):
+    to = merged_into(cid)
+    if to: return redirect(url_for('capture_page', cid=to, **request.args), 301)
+    capture = capture_or_404(cid)
+    if len(capture['photos']) == 1: return redirect(url_for('image_page', cid=cid, n=1, **request.args))     # its image page has it all
+    runs, run, results = chosen_run(cid)
+    return render_template('capture.html', capture=capture, runs=runs, run=run, results=results, **run_parts(cid, runs, run),
+                           marks=marks.for_run(store, cid, results) if results else {})
+
+
+def run_parts(cid, runs, run):
+    """What the runs section (_runs.html) needs besides the runs, and the page's refresh while any run is under way."""
+    return dict(busy=any(r['status'] in ('queued', 'running') for r in runs), baseline=version.baseline(), new_run_url=url_for('new_run', cid=cid),
+                run_arg={'run': run['id']} if run and request.args.get('run') else {},
+                results_url=run and url_for('run_results', cid=cid, rid=run['id']), credit=credit.remaining(HOME, ADMIN_KEY))
+
+
+@app.route('/captures/<cid>/images/<int:n>')
+def image_page(cid, n):
+    """One photo of a capture (n from 1, as in the marks' keys) with what a run found on it: the newest run, or ?run=."""
+    to = merged_into(cid)
+    if to: return redirect(url_for('image_page', cid=to, n=n, **request.args), 301)
+    capture = capture_or_404(cid)
+    if not 1 <= n <= len(capture['photos']): abort(404)
+    runs, run, results = chosen_run(cid)
+    ph = results['photos'][n - 1] if results and n <= len(results['photos']) else None
+    # a capture of one image has no capture page: this page carries its runs too
+    parts = run_parts(cid, runs, run) if len(capture['photos']) == 1 else dict(
+        busy=bool(run) and run['status'] in ('queued', 'running'), run_arg={'run': run['id']} if run and request.args.get('run') else {})
+    return render_template('image.html', capture=capture, n=n, photo=capture['photos'][n - 1], runs=runs, run=run, results=results, ph=ph,
+                           single=len(capture['photos']) == 1, **parts,
+                           file_url=lambda name: url_for('run_file', cid=cid, rid=run['id'], name=name),
+                           marks=marks.for_run(store, cid, results) if ph else {}, marks_url=f'/captures/{cid}/marks')
 
 
 @app.route('/captures/<cid>/runs', methods=['POST'])
@@ -238,6 +273,23 @@ def capture_photo(cid, name):
     name = secure_filename(name)
     try: return stream(repo.get_photo(store, cid, name), name)
     except NotFound: abort(404)
+
+
+@app.route('/captures/<cid>/thumbs/<size>/<name>')
+def photo_thumb(cid, size, name):
+    """A small JPEG of an uploaded photo (size: a THUMB_SIZES key), made the first time it's asked for and then kept on the
+    app's disk. A photo Pillow can't read has none."""
+    if not repo.valid_id(cid) or size not in THUMB_SIZES: abort(404)
+    name = secure_filename(name)
+    path = os.path.join(THUMBS, cid, f'{size}-{name}.jpg')
+    if not os.path.exists(path):
+        try: data = images.thumbnail(repo.get_photo(store, cid, name), THUMB_SIZES[size])
+        except (NotFound, OSError): abort(404)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        tmp = f'{path}.{secrets.token_hex(4)}.tmp'
+        with open(tmp, 'wb') as f: f.write(data)
+        os.replace(tmp, path)
+    with open(path, 'rb') as f: return stream(f.read(), path, max_age=7 * 86400)
 
 
 @app.route('/jobs/<cid>')

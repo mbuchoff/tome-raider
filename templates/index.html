@@ -61,7 +61,7 @@
   {% for c in captures %}{% set r = c.latest_run or {} %}
   <tr>
     <td><a href="{{ url_for('capture_page', cid=c.id) }}">{{ c.created[:16].replace('T', ' ') }}</a></td>
-    <td>{{ c.photos }}</td>
+    <td class="thumbs">{% for im in c.images or [] %}<a href="{{ url_for('image_page', cid=c.id, n=loop.index) }}" title="Image {{ loop.index }}: {{ im.name }}"><img src="{{ url_for('photo_thumb', cid=c.id, size='sm', name=im.file) }}" alt="Image {{ loop.index }}: {{ im.name }}" loading="lazy"></a>{% else %}{{ c.photos }}{% endfor %}</td>
     <td>{{ categories[c.category] if c.category in categories else c.category }}</td>
     <td>{{ c.runs }}{% if r.status and r.status != 'done' %} <span class="status {{ r.status }}">(latest {{ r.status }})</span>{% endif %}</td>
     <td>{% if r.pulls is not none %}{{ r.pulls }}{% if r.leads %} + {{ r.leads }} lead{{ 's' if r.leads != 1 }}{% endif %}{% endif %}</td>

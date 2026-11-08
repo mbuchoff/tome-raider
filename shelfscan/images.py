@@ -24,6 +24,15 @@ def jpeg(im, quality=88):
     return b.getvalue()
 
 
+def thumbnail(data, size):
+    """A photo's bytes as a JPEG at most size px on its longer side, the right way up. Raises OSError if it isn't an image."""
+    im = Image.open(io.BytesIO(data))
+    im.draft('RGB', (size, size))           # a JPEG decodes at a fraction of its full size: much faster for phone photos
+    im = ImageOps.exif_transpose(im).convert('RGB')
+    im.thumbnail((size, size))
+    return jpeg(im, 82)
+
+
 def overview(im, size=1568):
     o = im.copy()
     o.thumbnail((size, size))

@@ -59,7 +59,7 @@ check.failed = False
 c.post('/login', data={'passcode': 'x'})
 current['b'] = A
 cid = upload('rare'); runs = wait(cid)
-page = c.get(f'/captures/{cid}').data.decode()
+page = c.get(f'/captures/{cid}', follow_redirects=True).data.decode()
 check('runs table: the current baseline reads "latest"', '<th>When (UTC)</th><th>Settings</th><th>Baseline (UTC)</th>' in page
       and '<td><span title="2026-10-23 21:29 UTC, commit ' + A['sha'] + '">latest</span> (<code class="small" title="' + A['sha'] + '">aaaaaaa</code>)</td>' in page, page[:0])
 spent, books = SPENT, SAMPLE['photos'][0]['books']
@@ -74,16 +74,16 @@ r = c.post(f'/captures/{cid}/runs'); runs = wait(cid)
 check('on the same commit it still runs, reading the photos again from when it was queued',
       (len(runs), runs[0]['reread'], runs[0]['id'] in r.headers['Location'], jobs[-1] is not None
        and abs(jobs[-1] - pipeline.datetime.datetime.fromisoformat(runs[0]['created']).timestamp()) < 0.001), (2, True, True, True))
-check('and its header says so', ' · photos read again' in c.get(f'/captures/{cid}').data.decode())
+check('and its header says so', ' · photos read again' in c.get(f'/captures/{cid}', follow_redirects=True).data.decode())
 
 current['b'] = B
-page = c.get(f'/captures/{cid}').data.decode()
+page = c.get(f'/captures/{cid}', follow_redirects=True).data.decode()
 check('a new commit: the button names it', 'type="submit">Run against the current baseline (bbbbbbb)</button>' in page)
 check('and the older run shows its time and SHA', '>latest<' not in page and '<td><span title="commit ' + A['sha'] + '">2026-10-23 21:29</span> (<code' in page
       and '>latest<' not in c.get('/').data.decode())
 c.post(f'/captures/{cid}/runs'); runs = wait(cid)
 check('and runs it', len(runs) == 3 and runs[0]['baseline']['sha'] == B['sha'] and runs[0]['reread'])
-check('the button stays enabled after', 'type="submit">Run against' in c.get(f'/captures/{cid}').data.decode())
+check('the button stays enabled after', 'type="submit">Run against' in c.get(f'/captures/{cid}', follow_redirects=True).data.decode())
 index = c.get('/').data.decode()
 check('scan page: renamed columns', '<th>Runs</th><th>Pulls</th><th>Marked</th><th>Total Cost</th><th>Latest Baseline (UTC)</th>' in index)
 check('scan page: three runs, and the cost of all three', '<td>3</td>' in index and f"<td>${3 * SPENT:.2f}</td>" in index)
@@ -101,13 +101,13 @@ current['b'] = dict(B, sha='c' * 40); fail.append('boom')
 c.post(f'/captures/{cid}/runs'); runs = wait(cid)
 check('a failed run on the baseline', runs[0]['status'] == 'failed')
 check('the scan page says the latest failed', '<td>5 <span class="status failed">(latest failed)</span></td>' in c.get('/').data.decode())
-check('leaves the button enabled to retry', 'type="submit">Run against' in c.get(f'/captures/{cid}').data.decode())
+check('leaves the button enabled to retry', 'type="submit">Run against' in c.get(f'/captures/{cid}', follow_redirects=True).data.decode())
 current['b'] = dict(B, dirty=True)
-page = c.get(f'/captures/{cid}').data.decode()
+page = c.get(f'/captures/{cid}', follow_redirects=True).data.decode()
 check('uncommitted changes never count as run', 'type="submit">Run against' in page)
 check('nor as "latest"', '>latest<' not in page)
 current['b'] = None
-page = c.get(f'/captures/{cid}').data.decode()
+page = c.get(f'/captures/{cid}', follow_redirects=True).data.decode()
 check('no git: enabled, without a SHA', 'type="submit">Run against the current baseline</button>' in page)
 
 # a run of two photos gives the cost of one, in the header and the runs table

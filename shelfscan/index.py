@@ -20,6 +20,7 @@ def summary(store, cid):
     used = repo.run_photos(cap, run)
     costs = [r['cost']['spent'] for r in runs if (r.get('cost') or {}).get('spent') is not None]
     return {'id': cid, 'created': cap.get('created'), 'photos': len(photos), 'category': used[0].get('category') if used else None,
+            'images': [{'file': p['file'], 'name': p.get('name') or p['file']} for p in photos],         # for the thumbnails
             'fingerprint': [p.get('sha256') for p in photos] if all(p.get('sha256') for p in photos) else None,
             'latest_run': {k: run.get(k) for k in RUN_FIELDS} if run else None,
             'runs': len(runs), 'total_cost': round(sum(costs), 4) if costs else None,
