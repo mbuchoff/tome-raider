@@ -396,18 +396,20 @@ class Reference:
         if not author: return None
         return next((n for n, rx in self.watch if rx.search(author) and same_person(n, author, self.single_names)), None)
 
-    def comps(self, author, title, old=False, about=False, kind=''):
+    def comps(self, author, title, old=False, about=False, kind='', imprint='', alone=False):
         """Sold listings for this title, and whether they were matched together with the author: from the main price files,
         or from the supplementary ones (SUPPLEMENTARY) when the main ones have none. kind: 'paperback' or 'book club' looks only
-        in the sales of that kind (KINDS), which no other lookup sees."""
-        if kind: return self._comps(author, title, old, about, main_only=False, kind=kind)
-        hits, known = self._comps(author, title, old, about, main_only=True)
-        return (hits, known) if hits else self._comps(author, title, old, about, main_only=False)
+        in the sales of that kind (KINDS), which no other lookup sees. imprint: the publisher on the spine, which a match on
+        the whole title alone must agree with. alone: the author came from a catalog, not the spine, so the title must stand
+        alone in a listing (see stands_alone)."""
+        if kind: return self._comps(author, title, old, about, main_only=False, kind=kind, imprint=imprint, alone=alone)
+        hits, known = self._comps(author, title, old, about, main_only=True, imprint=imprint, alone=alone)
+        return (hits, known) if hits else self._comps(author, title, old, about, main_only=False, imprint=imprint, alone=alone)
 
     def _pool(self, rows, main_only, kind=''):
         return [r for r in rows if r.get('kind', '') == kind and not (main_only and r.get('file') in SUPPLEMENTARY)]
 
-    def _comps(self, author, title, old, about, main_only, kind=''):
+    def _comps(self, author, title, old, about, main_only, kind='', imprint='', alone=False):
         """Sold listings for this title, and whether they were matched together with the author.
         With an author read, any title counts but the listing must name one of the authors' surnames; without one, only a
         distinctive title of three or more significant words counts. An old copy that finds nothing either way may also match
@@ -424,7 +426,7 @@ class Reference:
             main = re.split(r'\s*[:;(]|\s+-\s+', title or '')[0]          # 'Bambi: A Life in the Woods' -> 'Bambi'
             for t in dict.fromkeys([title, main]):
                 trx = title_rx(t, short_ok=True)
-                hits = [r for r in by_author if trx.search(r['text'])] if trx else []
+                hits = [r for r in by_author if trx.search(r['text']) and (not alone or self.stands_alone(r['text'], trx))] if trx else []
                 if hits: return hits, True
         else:
             trx = title_rx(title)
@@ -439,7 +441,48 @@ class Reference:
                 trx = title_rx(t)
                 hits = [r for r in self._pool(self.having(lookup_words(t)), main_only, kind) if trx and trx.search(r['text']) and not (r['year'] and r['year'] >= 1970)]
                 if hits and one_book(hits, t) and (len(hits) > 1 or t == whole): return hits, False      # one sale won't value a trimmed title
+        if not surs and not about and not partial:
+            hits = self.whole_title(title, imprint, main_only, kind)
+            if hits: return hits, False
         return [], bool(surs)
+
+    def whole_title(self, title, imprint, main_only, kind=''):
+        """Listings of a whole title read with no author (the bookshop: "do a check for author ... as that is going to pull
+        immediate results off database"), for a title of two distinctive words or more that no other lookup matched. A
+        listing counts where the title stands alone in it (stands_alone): "The Red Barn" isn't "The Red Barn Mystery". Two or
+        more must agree on another word (one_book), and one counts alone only if no other listing holds the title; the title
+        mustn't be a common phrase (held anywhere by more than 20
+        listings: "The Civil War"), and a publisher the spine shows clearly (no "?") must be named in one of them. On the
+        shop's 69 photos (8 November 2026) it changed 7 decisions, one of them wrongly: a lead from another book's sale."""
+        t = ' '.join(words(re.sub(r'\(.*?\)|\?|\.\.\.|…', ' ', title or '')))
+        t = re.sub(r'\bvols?\s+[ivx\d].*$', '', t).strip()
+        own = [w for w in words(t) if len(w) > 2 and w not in STOP and w not in GENERIC and not w.isdigit()]
+        trx = title_rx(t, short_ok=True) if len(own) >= 2 else None
+        if not trx: return []
+        held = [r for r in self._pool(self.having(lookup_words(t)), main_only, kind) if trx.search(r['text'])]
+        hits = [r for r in held if self.stands_alone(r['text'], trx)]
+        # one listing is taken as it is only when no other holds the title at all ("Lighthouse Keepers of Maine")
+        if not hits or len(held) > 20 or not (len(held) == 1 or (len(hits) >= 2 and one_book(hits, t))): return []
+        pub = [w for w in tokens(imprint) if len(w) > 2 and w not in STOP and w not in GENERIC and w not in LISTING_WORDS
+               and w not in set(own)] if imprint and '?' not in imprint else []
+        if pub and not any(w in tokens(r['text']) for r in hits for w in pub): return []
+        return hits
+
+    def stands_alone(self, text, trx):
+        """Whether a title (its regex trx) stands alone somewhere in a listing: not just after a little word such as "of" or
+        "the" ("The Ghost of the Red Barn" for "The Red Barn"), and followed by the end, punctuation, a number, a
+        listing word ("first", "edition", "by"), an initial or a given name, not by more title."""
+        t = text.lower()
+        for m in trx.finditer(t):
+            before, after = t[:m.start()], t[m.end():]
+            prev = words(before)[-1:]
+            if prev and prev[0] in STOP and not re.search(r'[-~/|:,.()"!;]\s*$', before): continue
+            nxt = words(after)[:1]
+            if not after.strip() or re.match(r'\s*[-~/|:,.()"!;&+*\[\]]', after) or not nxt: return True
+            w = nxt[0]
+            if w.isdigit() or re.fullmatch(r'\d+(?:st|nd|rd|th)', w) or w in LISTING_WORDS or w == 'by' or w in self.given_names: return True
+            if re.match(r'\s*[a-z]\.', after): return True
+        return False
 
     def author_sales(self, author):
         """Every sale naming this author by their whole name, any book, any edition: from the main price files, or the

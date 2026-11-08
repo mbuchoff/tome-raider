@@ -258,6 +258,26 @@ def whitelist_match(ref, author, title, imprint, look, text):
     return found
 
 
+PARTIAL = re.compile(r'^\W*(?:\.\.\.|…)|(?:\.\.\.|…)\W*$')
+
+
+def wants_author(b, ref):
+    """Whether to look a book up in the catalogs (catalogs.py): a hardcover, or a book of unclear format, whose whole title
+    was read but no author, not even a surname, that the notes haven't named one for and that hasn't been looked up yet,
+    and whose title finds no sales on its own, the whole-title match included."""
+    title = clean(b.get('title'))
+    if not bare_title(title) or PARTIAL.search(b.get('title') or '') or (b.get('format') or '').lower() == 'paperback': return False
+    if 'lookup' in b or name_words(clean(b.get('author'))): return False
+    notes = b.get('notes') or {}
+    if clean(notes.get('author')) and notes.get('confidence') in ('high', 'medium'): return False
+    year = spine_year(b.get('spine_text'), title)
+    old = (b.get('look') or '').lower() in ('old', 'antique') or bool(year and year < 1970)
+    foot = b.get('foot') or {}
+    imprint = clean(b.get('imprint'))
+    if clean(foot.get('imprint')) and (not imprint or '?' in imprint): imprint = clean(foot['imprint'])
+    return not ref.comps('', title, old, imprint=imprint)[0]
+
+
 def assess(b, category, ref, minimum):
     author, title, imprint = clean(b.get('author')), clean(b.get('title')), clean(b.get('imprint'))
     read_imprint = imprint          # as read on the spine, before the foot's or the notes' guesses fill it in
@@ -277,6 +297,13 @@ def assess(b, category, ref, minimum):
         author = clean(notes['author'])
         out['identified'] = author
         out['signals'].append(f'author identified by the notes as {author}')
+    # a book with no author at all may carry one from catalogs.py: a same-titled copy on the photo, or a catalog
+    found = b.get('lookup') or {}
+    from_catalog = not nw and not out.get('identified') and bool(clean(found.get('author')))
+    if from_catalog:
+        author = clean(found['author'])
+        out['identified'] = author
+        out['signals'].append(f"author found in {found.get('source') or 'a catalog'} as {author}")
     if (not imprint or '?' in imprint) and clean(notes.get('publisher')): imprint = clean(notes['publisher'])
     if unreadable(b):
         if category == 'rare' and look == 'antique' and b.get('legibility') != 'unreadable':
@@ -334,7 +361,7 @@ def assess(b, category, ref, minimum):
 
     # evidence from the reference data
     adaptation = ADAPTATION.search(' '.join([title, marks, b.get('spine_text') or '']))
-    hits, author_known = ref.comps(author, title, old, about=about) if not adaptation else ([], bool(author))
+    hits, author_known = ref.comps(author, title, old, about=about, imprint=imprint, alone=from_catalog) if not adaptation else ([], bool(author))
     if listed_pb: hits = listed_pb + hits
     # a publisher whose sales value only its own copies must be read as text, on the spine or at its foot: the foot
     # close-up's guess from an emblem ("gold circular emblem": Easton Press) has been wrong. The user can name it too, in
@@ -375,7 +402,7 @@ def assess(b, category, ref, minimum):
             else 'book-club copy (club logo at the foot of the spine)' if (foot.get('book_club') or '').lower().startswith('yes') and not imp
             else 'book-club copy' if ref.rx['book_club_sure'].search(bc_text) and '?' not in marks else '')
     sells = bool(hits)                  # the title's ordinary sales: a book-club copy of a title that sells is said to be left out
-    if club: hits, author_known = ref.comps(author, title, old, about=about, kind='book club')
+    if club: hits, author_known = ref.comps(author, title, old, about=about, kind='book club', imprint=imprint, alone=from_catalog)
     comps, only_signed = relevant_comps(hits, fmt, signed_copy, house)
     later = LATER_EDITION.search(' '.join([b.get('spine_text') or '', marks, foot_text]))
     def first_of_later(h): return bool(later) and bool(FIRST_EDITION_SALE.search(h['title']))

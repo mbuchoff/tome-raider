@@ -3,7 +3,7 @@
 A job is a folder holding job.json (the request and its status), the uploaded photos, and after a run results.json plus images.
 run_stored() runs a stored capture this way in a temporary folder and saves the run's results and images to the store."""
 import concurrent.futures as cf, datetime, json, os, re, shutil, tempfile, threading, time, traceback
-from . import anthologies, edition_check, images, notes, reader, repo, rules, scan_note
+from . import anthologies, catalogs, edition_check, images, notes, reader, repo, rules, scan_note
 from .claude import Budget, CapReached, Claude
 from .refdata import Reference
 
@@ -103,6 +103,12 @@ def run(job_dir, claude, now=time.time, on_progress=None):
     def one_photo(k, p, im, bands, books, note_applied):
         budget = parts[k - 1]
         shelf_category, minimum_for = settings(p)
+        # a book with no author whose title found no sales is looked up in free catalogs; an author found there is used
+        # like one read on the spine
+        progress(k, 'looking up authors')
+        try: catalogs.add_authors(books, ref)
+        except Exception as e:                  # the lookups are extra; keep the results
+            print(f'photo {k}: no author lookups ({type(e).__name__}: {e})', flush=True)
         wants = []          # leatherbound copies with no publisher on the spine, to compare with their title's sale photos
         pulls, leads, not_pulled, skipped = rules.evaluate(books, shelf_category, ref, minimum_for, wants)
         # the feet of the candidates' spines, up close: book-club logos and reprint imprints there are easy to miss at shelf scale
