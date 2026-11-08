@@ -5,7 +5,9 @@ __pycache__/
 *.pyc
 .DS_Store
 version.json
-.claude/
+# Claude Code worktrees and local settings stay out; project skills go in
+.claude/*
+!.claude/skills/
 
 # the shop's sales spreadsheets live in the private storage container (reference/), not in the repository
 data/*.xlsx
