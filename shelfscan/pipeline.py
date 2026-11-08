@@ -3,7 +3,7 @@
 A job is a folder holding job.json (the request and its status), the uploaded photos, and after a run results.json plus images.
 run_stored() runs a stored capture this way in a temporary folder and saves the run's results and images to the store."""
 import concurrent.futures as cf, datetime, json, os, re, shutil, tempfile, threading, time, traceback
-from . import anthologies, images, notes, reader, repo, rules
+from . import anthologies, images, notes, reader, repo, rules, scan_note
 from .claude import Budget, CapReached, Claude
 from .refdata import Reference
 
@@ -61,17 +61,26 @@ def run(job_dir, claude, now=time.time, on_progress=None):
             job['cost'] = budget.summary()
             save(job)
 
-    def one_photo(k, p):
-        budget = parts[k - 1]                           # this photo's calls spend through its part of the job's budget
-        progress(k, 'finding shelves')
-        im = images.load(os.path.join(job_dir, p['file']))
+    def settings(p):
         overrides = {int(s): c for s, c in (p.get('overrides') or {}).items()}
         def shelf_category(s): return overrides.get(s, p['category'])
         def minimum_for(cat): return p.get('minimum') or ref.rules['minimum_value'][cat]
+        return shelf_category, minimum_for
+
+    def read_one(k, p):
+        budget = parts[k - 1]                           # this photo's calls spend through its part of the job's budget
+        progress(k, 'finding shelves')
+        im = images.load(os.path.join(job_dir, p['file']))
+        shelf_category, _ = settings(p)
         def wants_second(s): return bool(p.get('second_read')) and shelf_category(s) in ('rare', 'extreme', 'signed')
         def note(s): return reader.STICKER_NOTE if shelf_category(s) in rules.CHECK_ORDER else ''
         bands, books = reader.read_photo(claude, im, budget, wants_second, progress=lambda d, n, msg=None: progress(k, msg or f'read {d} of {n} crops'),
                                          note=note)
+        return im, bands, books
+
+    def one_photo(k, p, im, bands, books, note_applied):
+        budget = parts[k - 1]
+        shelf_category, minimum_for = settings(p)
         pulls, leads, not_pulled, skipped = rules.evaluate(books, shelf_category, ref, minimum_for)
         # the feet of the candidates' spines, up close: book-club logos and reprint imprints there are easy to miss at shelf scale
         progress(k, 'checking the feet of the candidate spines')
@@ -115,14 +124,29 @@ def run(job_dir, claude, now=time.time, on_progress=None):
                       'books': sum(1 for b in books if b['shelf'] == s), 'unreadable': sum(1 for b in unread if b['shelf'] == s)}
                      for s in shelves],
             annotated=f'{stem}_annotated.jpg', books=len(books), unreadable=len(unread), pulls=pulls, leads=leads, not_pulled=not_pulled, skipped=skipped,
-            second_read=bool(p.get('second_read')), readings=books)       # every reading, so the rules can be replayed for free
+            second_read=bool(p.get('second_read')), readings=books,       # every reading, so the rules can be replayed for free
+            **({'note_applied': note_applied} if note_applied else {}))
 
     # photos run side by side (each already reads four crops at a time), so a three-photo scan takes about as long as one;
-    # a photo that fails or hits the cap doesn't lose the others' results
-    with cf.ThreadPoolExecutor(min(3, len(job['photos']))) as ex:
-        futures = [ex.submit(one_photo, k, p) for k, p in enumerate(job['photos'], 1)]
+    # a photo that fails or hits the cap doesn't lose the others' results. Every photo is read before any is assessed, since
+    # the scan's note can name a section on any of them (scan_note); its call counts toward the scan, not a photo.
+    photos = list(enumerate(job['photos'], 1))
+    with cf.ThreadPoolExecutor(min(3, len(photos))) as ex:
+        reads = {k: ex.submit(read_one, k, p) for k, p in photos}
+    read = {k: f.result() for k, f in reads.items() if not f.exception()}
+    applied = {}
+    noted = [(k, p.get('name') or p['file'], p.get('note'), read[k][2]) for k, p in photos if k in read and (p.get('note') or '').strip()]
+    if noted:
+        for k, *_ in noted: progress(k, 'applying the note')
+        try: applied = scan_note.apply(claude, noted, budget)
+        except Exception as e:                  # the note is extra; keep the results, and say it wasn't applied
+            applied = {k: {'error': f'{type(e).__name__}: {e}'} for k, *_ in noted}
+            print(f'note not applied ({type(e).__name__}: {e})', flush=True)
+    with cf.ThreadPoolExecutor(min(3, len(photos))) as ex:
+        futures = {k: ex.submit(one_photo, k, p, *read[k], applied.get(k)) for k, p in photos if k in read}
     final, error = 'done', None            # job.json keeps saying 'running' until every photo has finished
-    for k, f in enumerate(futures, 1):
+    for k, _ in photos:
+        f = futures.get(k) or reads[k]          # a photo that failed in reading has its reading's error
         try:
             results['photos'].append(f.result())
         except CapReached as e:

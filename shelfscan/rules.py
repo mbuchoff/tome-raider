@@ -55,6 +55,10 @@ RARE_SHELVES = ('rare', 'extreme')
 CHECK_ORDER = ('extreme', 'signed')
 # the reader writes "signed sticker" in marks for a Signed or Autographed sticker or label on the spine or jacket
 STICKER = re.compile(r'signed sticker|autograph\w* (sticker|label)|(sticker|label)[^,;]*\b(signed|autograph)', re.I)
+# a copy its marks call signed, on the spine, a sticker or a tag: "signed", "signed copy sticker", "$150 signed". Not
+# "signed?", "possibly signed", "appears signed" or "not signed", nor a label on the next book
+SIGNED_LABEL = re.compile(r"(?<!possibly )(?<!appears )(?<!maybe )(?<!probably )(?<!not )\b(?:signed|autograph\w*)\b(?!\s*[?…])", re.I)
+NEXT_BOOK = re.compile(r'\b(?:adjacent|next|neighbou?ring) (?:book|spine|copy)\b', re.I)
 ROMAN_YEAR = re.compile(r'\bM{1,2}(?:CM|CD|D?C{0,3})(?:XC|XL|L?X{0,3})(?:IX|IV|V?I{0,3})\b')
 ARABIC_YEAR = re.compile(r'(?<!\d)(1[5-9]\d\d|20[0-2]\d)(?!\d)')
 
@@ -176,8 +180,14 @@ def same_imprint(imprint, notes):
 
 
 def is_signed(h):
-    """A signed sale: its listing says so, or its file's Signed column does (Easton Press and Franklin Library)."""
+    """A signed sale: its listing says so, or its file's Signed column does (Easton Press and Franklin Library). The first
+    editions table's "Signed?" column isn't read: it flags any listing with "sign" in it ("The Sign of the Four")."""
     return bool(h.get('signed')) or bool(SIGNED_SALE.search(h['title']))
+
+
+def signed_label(marks):
+    """Whether the reading's marks say plainly that this copy is signed (SIGNED_LABEL), in a part not about the next book."""
+    return any(SIGNED_LABEL.search(p) and not NEXT_BOOK.search(p) for p in (marks or '').split(';'))
 
 
 def without_signatures(notes):
@@ -257,6 +267,11 @@ def assess(b, category, ref, minimum):
     signed_shelf = category == 'signed'
     check_order = category in CHECK_ORDER
     sticker = STICKER.search(marks)
+    # a signed copy: on a shelf the user calls signed, in a section the scan's note calls signed (scan_note), or signed plainly
+    # on its spine, a sticker or a tag (the bookshop, 8 November 2026). It is valued from signed sales of its title; other
+    # copies never are. A book the note says isn't signed isn't, whatever its shelf.
+    said = b.get('from_note') or ''
+    signed_copy = (signed_shelf or said == 'signed' or signed_label(marks)) and said != 'not signed'
 
     # paperbacks are skipped silently unless whitelisted, sold as first-edition paperbacks on the bookshop's paperback and
     # book-club list, or by an always-check author; an unclear format is treated as a hardcover
@@ -278,6 +293,7 @@ def assess(b, category, ref, minimum):
             return out
 
     sig = out['signals']
+    if said in ('signed', 'not signed'): sig.append(f"{said}, as the scan's note says")
     if coll_ok: sig.append(f"{'omnibus' if kind == 'omnibus' else 'collection'} on the whitelist")
     if wl:
         e = wl[0]
@@ -305,12 +321,12 @@ def assess(b, category, ref, minimum):
     # count as collectible.
     imp = ref.rx['collectible_imprints'].search(' '.join([imprint, b.get('spine_text') or '', foot_text]))
     bc_text = ' '.join([imprint, marks, b.get('spine_text') or '', foot_text])
-    club = ('book-club copy (club logo at the foot of the spine)' if (foot.get('book_club') or '').lower().startswith('yes') and not imp
+    club = ("book-club copy (the scan's note)" if said == 'book club'
+            else 'book-club copy (club logo at the foot of the spine)' if (foot.get('book_club') or '').lower().startswith('yes') and not imp
             else 'book-club copy' if ref.rx['book_club_sure'].search(bc_text) and '?' not in marks else '')
     sells = bool(hits)                  # the title's ordinary sales: a book-club copy of a title that sells is said to be left out
     if club: hits, author_known = ref.comps(author, title, old, about=about, kind='book club')
-    signed_ok = signed_shelf or bool(re.search(r'\bsigned\b', marks, re.I))
-    comps, only_signed = relevant_comps(hits, fmt, signed_ok, house)
+    comps, only_signed = relevant_comps(hits, fmt, signed_copy, house)
     later = LATER_EDITION.search(' '.join([b.get('spine_text') or '', marks, foot_text]))
     def first_of_later(h): return bool(later) and bool(FIRST_EDITION_SALE.search(h['title']))
     if later and any(map(first_of_later, comps)):
@@ -368,19 +384,27 @@ def assess(b, category, ref, minimum):
         out['checks'].append(f"Complete sets sold for a median of {fmt_money(median([h['price'] for h in own_sets]))}; a partial set is worth much less")
     elsewhere = [h for h in comps if other_edition(h)]
     comps = [h for h in comps if not other_edition(h)]
+    # a signed copy is valued from signed sales of its title, or from its unsigned ones where there are none or they sold for
+    # more: a signed copy always outsells an unsigned one (the bookshop, 8 November 2026)
+    st = [h for h in comps if is_signed(h)] if signed_copy else []
+    unsigned = [h for h in comps if not is_signed(h)]
+    if st and unsigned and median([h['price'] for h in unsigned]) > median([h['price'] for h in st]): st = []
+    if st: comps = st
+    elif signed_copy: comps = unsigned
     if comps:
         out['value'] = median([h['price'] for h in comps])
         out['comps'] = sorted(comps, key=lambda h: -h['price'])[:4]
-        out['basis'] = ('complete sets of this title' if only_sets else 'sales of this title') if not club else 'book-club sales of this title'
-        sig.append(f"{len(comps)} {'book-club ' if club else ''}sale{'s' if len(comps) != 1 else ''} of this title" + (' by this author' if author_known else '')
+        out['basis'] = ('book-club sales of this title' if club else 'signed copies of this title' if st
+                        else 'unsigned copies of this title; a signature adds to it' if signed_copy
+                        else 'complete sets of this title' if only_sets else 'sales of this title')
+        sig.append(f"{len(comps)} {'book-club ' if club else 'signed ' if st else ''}sale{'s' if len(comps) != 1 else ''} of this title" + (' by this author' if author_known else '')
                    + (f", median {fmt_money(out['value'])}" if len(comps) > 1 else f" at {fmt_money(out['value'])}"))
     elif only_signed and hits:
         sig.append('title sells only when signed')
-    signed_copy = signed_shelf or (check_order and bool(sticker))
     # a signature can't be seen on a spine: say once what signed copies fetch, when they fetch much more (the bookshop's choice)
     signed = [h for h in same_house(hits, house) if is_signed(h) and not LOT_WORDS.search(h['title']) and not other_edition(h)
               and not first_of_later(h)]
-    if signed and not signed_copy and not signed_ok:
+    if signed and not signed_copy and said != 'not signed':
         ms = median([h['price'] for h in signed])
         if out['value'] is None or ms >= 1.5 * out['value']:
             out['checks'].append(f'Check for a signature: signed copies sold for a median of {fmt_money(ms)}')
@@ -438,6 +462,9 @@ def assess(b, category, ref, minimum):
         if club and sells: return no(club)
         out['reason'] = 'no signal'
         return out
+    # a copy not clearly signed, of a title that sold only signed, is not a pull, whatever else it shows (the bookshop,
+    # 8 November 2026)
+    if only_signed and not comps and not signed_copy and not wl: return no('this title sold for over $50 only when signed')
     if cue: sig.append(f'"{cue.group(0).lower()}" on the spine')
 
     # exclusions
@@ -465,20 +492,16 @@ def assess(b, category, ref, minimum):
     # the category's rule
     val = out['value']
     if check_order:
-        # no minimum: every candidate is listed, ordered by the likeliest value the evidence gives
-        st = [h for h in comps if is_signed(h)] if signed_copy else []
-        sc = same_house(ref.signed_comps(author), house) if signed_copy and not st and not about else []
-        if st: estimate(st, 'signed copies of this title')
-        elif sc and (val is None or median([h['price'] for h in sc]) >= val): estimate(sc, 'signed copies by this author')
-        elif comps:
-            if signed_copy: out['basis'] = 'unsigned copies of this title; a signature adds to it'
-        elif len(ac) >= 3: estimate(ac, "this author's other books (a rough guide)", rough=True)
+        # no minimum: every candidate is listed, ordered by the likeliest value the evidence gives. A copy whose title has no
+        # sales: a signed one from its author's signed sales, else from the author's other books, both rough guides (an
+        # author's signed sales can be letters or paintings)
+        sc = same_house(ref.signed_comps(author), house) if signed_copy and not comps and not about else []
+        if sc: estimate(sc, 'signed copies by this author (a rough guide)', rough=True)
+        elif not comps and len(ac) >= 3: estimate(ac, "this author's other books (a rough guide)", rough=True)
         ok = True
     elif first_check: ok = True                 # a possible first edition or collectable printing: a lead to check
     elif val is not None and val < minimum and not wl:
         return no(f'matching sales median {fmt_money(val)}, under the {fmt_money(minimum)} minimum')
-    elif only_signed and not comps and not (old and hard) and not wl:
-        return no('this title sold for over $50 only when signed')
     elif not old and not matched and not (ill or imp or mk or wl) and category != 'extreme':
         if category != 'rare': return no('modern copy by a collected author, with no sales of this title')
         ok, lead_only = True, True          # on a rare shelf, a lead to check rather than a pull
@@ -564,7 +587,8 @@ def evaluate(books, shelf_category, ref, minimum_for):
     of one title share an entry and its number."""
     pulls, leads, not_pulled, skipped = [], [], [], {'paperback not on the whitelist': 0, 'unreadable': 0, 'no signal': 0}
     for b in books:
-        cat = shelf_category(b['shelf'])
+        # a book in a section the scan's note calls signed is on a signed shelf (the bookshop: "a book section or shelf")
+        cat = 'signed' if b.get('from_note') == 'signed' else shelf_category(b['shelf'])
         a = assess(b, cat, ref, minimum_for(cat))
         item = {'book': b, 'assessment': a, 'category': cat, 'label': describe(b),
                 'links': links(clean(b.get('author')), clean(b.get('title')), clean(b.get('imprint')))}

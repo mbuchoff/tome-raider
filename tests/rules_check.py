@@ -364,4 +364,65 @@ check('no limitation number, span, century or year of the title is a printing da
       [None, None, None, 1825])
 a = rules.assess(book('Harbor Nights', 'Hollis Prentiss', look='unclear', spine_text='Harbor Nights / Prentiss / ISBN 0-12-345678-9'), 'rare', years, 30)
 check('an ISBN on the spine: printed 1966 or later, so none of these sales', (a['value'], any('1966 or later (ISBN on the spine)' in s for s in a['signals'])), (None, True))
+
+# signed copies (the bookshop, 8 November 2026): a signed shelf or a signed label on the spine is valued from signed sales of
+# its title, else from its unsigned sales, which a signed copy always outsells; a copy not clearly signed is never pulled for
+# a title that sold only signed
+signed = refdata.Reference(price_files=[sheet('signed.csv', ['Title', 'Signed?', 'Sale Price', 'Sale Date'], [
+    ['Copper Bay by Ada Wren, first edition 1951', 'No', '$80.00', 'Jan 1, 2025'], ['Copper Bay, Ada Wren, 1951 first edition', 'No', '$90.00', 'Feb 1, 2025'],
+    ['Ada Wren / Copper Bay / first printing 1951', 'No', '$100.00', 'Mar 1, 2025'],
+    ['Copper Bay SIGNED by Ada Wren 1951 first edition', 'Yes', '$400.00', 'Apr 1, 2025'], ['Copper Bay, Ada Wren, inscribed 1951', 'No', '$500.00', 'May 1, 2025'],
+    ['Tin Harbor by Ada Wren, first edition 1953', 'No', '$70.00', 'Jan 2, 2025'], ['Tin Harbor, Ada Wren, 1953', 'No', '$75.00', 'Feb 2, 2025'],
+    ['Ada Wren, Tin Harbor, first printing 1953', 'No', '$80.00', 'Mar 2, 2025'],
+    ['Glass Orchard by Ada Wren, signed first edition 1955', 'Yes', '$300.00', 'Jan 3, 2025'], ['Glass Orchard, Ada Wren, autographed 1955', 'Yes', '$320.00', 'Feb 3, 2025'],
+    ['The Sign of the Lantern by Ada Wren, first edition 1957', 'Yes', '$500.00', 'Jan 4, 2025'],
+    ['Salt Road by Ivo Marsh, first edition, first printing 1960', 'No', '$150.00', 'Jan 5, 2025'], ['Salt Road, Ivo Marsh, 1960 first edition', 'No', '$160.00', 'Feb 5, 2025'],
+    ['Ivo Marsh / Salt Road / true first 1960', 'No', '$170.00', 'Mar 5, 2025'],
+    ['Salt Road, Ivo Marsh, signed', 'Yes', '$90.00', 'Apr 5, 2025'], ['Salt Road signed by Ivo Marsh', 'Yes', '$110.00', 'May 5, 2025']])])
+check("a 'Signed?' Yes on a listing that doesn't say signed is not a signed sale (the column flags any \"sign\")",
+      [rules.is_signed(r) for r in signed.prices if 'Lantern' in r['title']], [False])
+check('an inscribed sale the column calls No is signed', [rules.is_signed(r) for r in signed.prices if 'inscribed' in r['title']], [True])
+for marks in ('signed copy sticker', 'yellow price sticker "$150 signed"', 'signed limited edition, slipcase'):
+    a = rules.assess(book('Copper Bay', 'Ada Wren', marks=marks), 'cheap', signed, 50)
+    check(f'"{marks}" on a cheap shelf: valued from signed sales of the title', (a['value'], a['basis']), (450.0, 'signed copies of this title'))
+a = rules.assess(book('Copper Bay', 'Ada Wren'), 'signed', signed, 0)
+check('on a signed shelf: the same', (a['value'], a['basis']), (450.0, 'signed copies of this title'))
+a = rules.assess(book('Salt Road', 'Ivo Marsh'), 'signed', signed, 0)
+check('where signed copies of its title sold for less than unsigned ones: the unsigned value, which a signature adds to',
+      (a['value'], a['basis']), (160.0, 'unsigned copies of this title; a signature adds to it'))
+a = rules.assess(book('Tin Harbor', 'Ada Wren', marks='signed copy sticker'), 'cheap', signed, 50)
+check('with no signed sales of its title: its unsigned sales, which a signature adds to',
+      (a['value'], a['basis'], a['decision']), (75.0, 'unsigned copies of this title; a signature adds to it', 'pull'))
+a = rules.assess(book('Tin Harbor', 'Ada Wren', marks='signed sticker'), 'extreme', signed, 0)
+check("and not from the author's other signed books", (a['value'], a['basis']), (75.0, 'unsigned copies of this title; a signature adds to it'))
+for marks in ('signed?', 'possibly signed first edition', 'appears signed copy', '"signed 1st" price label ($45) on adjacent book'):
+    a = rules.assess(book('Copper Bay', 'Ada Wren', marks=marks), 'cheap', signed, 50)
+    check(f'"{marks}" is not clearly signed: valued from unsigned sales, with the signature line', (a['value'], a['checks']),
+          (90.0, ['Check for a signature: signed copies sold for a median of $450']))
+for cat, look in (('extreme', 'modern'), ('rare', 'antique')):
+    a = rules.assess(book('Glass Orchard', 'Ada Wren', look=look), cat, signed, 0 if cat == 'extreme' else 50)
+    check(f'not clearly signed, on a {cat} shelf, and its title sold only signed: not pulled', (a['decision'], a['reason']),
+          ('not pulled', 'this title sold for over $50 only when signed'))
+a = rules.assess(book('Glass Orchard', 'Ada Wren', look='old'), 'cheap', signed, 50)
+check('one with nothing else to list it is skipped as before, not added to the not-pulled list', (a['decision'], a['reason']), ('skip', 'no signal'))
+a = rules.assess(book('Glass Orchard', 'Ada Wren', marks='signed sticker'), 'extreme', signed, 0)
+check('signed, it is valued from them', (a['value'], a['decision']), (310.0, 'pull'))
+a = rules.assess(book('Rope Ladder', 'Ada Wren', marks='signed sticker'), 'extreme', signed, 0)
+check("a signed copy of a title with no sales: the lower quartile of the author's signed sales",
+      (a['value'], a['basis']), (320.0, 'signed copies by this author (a rough guide)'))
+
+# what the scan's note says a book is (scan_note): signed, not signed or a book-club copy
+a = rules.assess(book('Copper Bay', 'Ada Wren', from_note='signed'), 'rare', signed, 100)
+check("in a section the note calls signed: valued from signed sales, and says so", (a['value'], a['basis'], a['signals'][0]),
+      (450.0, 'signed copies of this title', "signed, as the scan's note says"))
+a = rules.assess(book('Copper Bay', 'Ada Wren', from_note='not signed'), 'signed', signed, 0)
+check("one the note calls not signed, on a signed shelf: unsigned sales, and no signature reminder", (a['value'], a['checks']), (90.0, []))
+a = rules.assess(book('Copper Bay', 'Ada Wren', from_note='not signed', marks='signed sticker'), 'extreme', signed, 0)
+check('the note outranks a signed sticker', a['value'], 90.0)
+pulls, leads, not_pulled, skipped = rules.evaluate([book('Rope Ladder', 'Ada Wren', from_note='signed')], lambda s: 'rare', signed,
+                                                   lambda c: {'rare': 100, 'signed': None}[c])
+check("a book the note calls signed is on a signed shelf: no minimum, and the author's signed sales value a title with none",
+      [(x['category'], x['assessment']['value']) for x in pulls], [('signed', 320.0)])
+a = rules.assess(book('Copper Weathervanes', 'Orrin Blake', from_note='book club'), 'cheap', kinds, 30)
+check("one the note calls a book-club copy: valued from its book-club sales", (a['decision'], a['value'], a['basis']), ('pull', 70.0, 'book-club sales of this title'))
 sys.exit(1 if check.failed else 0)

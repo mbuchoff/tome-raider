@@ -15,8 +15,10 @@ import collections, csv, datetime, difflib, hashlib, io, json, os, re, statistic
 from .xlsx_read import read as read_xlsx
 
 DATA = os.environ.get('SHELFSCAN_DATA') or os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'data')
-DEFAULT_PRICE_FILES = ['sales_report.xlsx', 'master_list_2022.xlsx', 'first_editions.xlsx', 'easton_franklin.xlsx', 'special_editions.csv',
-                       'specialty_genres.csv', 'paperback_bookclub.csv']
+# a file that changes gets a new name: the app keeps its copy of each by name (fetch). The first editions table of 8 November
+# 2026 adds 32,952 signed sales.
+DEFAULT_PRICE_FILES = ['sales_report.xlsx', 'master_list_2022.xlsx', 'first_editions_2026-11-08.xlsx', 'easton_franklin.xlsx',
+                       'special_editions.csv', 'specialty_genres.csv', 'paperback_bookclub.csv']
 # files used only for a title or author the others have no sales of: the bookshop's Specialty Genres file (occult, sciences,
 # travel...) is full of antiquarian listings that would otherwise value ordinary later copies of classics
 SUPPLEMENTARY = {'specialty_genres.csv'}

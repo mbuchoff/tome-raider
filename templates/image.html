@@ -62,6 +62,9 @@
 {% set pi = n %}
 <div id="run" data-run="{{ run.id }}">
 {% if ph.note %}<p><strong>Note:</strong> {{ ph.note }}</p>{% endif %}
+{% if ph.note_applied %}{% set na = ph.note_applied %}<p class="small">{% if na.error %}<span class="error">The note couldn't be applied ({{ na.error }}), so these results don't use it.</span>
+  {%- elif na.books %}<strong>Taken from the note:</strong> {{ na.summary }}{% for kind, titles in na.books.items() %} <strong>{{ {'signed': 'Signed', 'not signed': 'Not signed', 'book club': 'Book-club copies'}[kind] }}:</strong> {{ titles|join('; ') }}.{% endfor %}
+  {%- else %}<span class="muted">The note names no signed or book-club books on this photo{% if na.summary %} ({{ na.summary }}){% endif %}.</span>{% endif %}</p>{% endif %}
 {% set counted = ph.unreadable is defined %}
 {% set check = ph.shelves and not ph.shelves|rejectattr('check_order')|list %}
 {% if counted and ph.books %}{% set in_person = ph.not_pulled|selectattr('assessment.reason', 'equalto', 'title unreadable; an antique on a rare shelf, so check it in person')|list|length %}
